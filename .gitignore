@@ -30,6 +30,7 @@ build/
 .turbo/
 
 # ---- Data (large, regenerable) ----
+data/lancedb/
 data/chromadb/
 data/raw/
 data/embeddings/

@@ -8,7 +8,10 @@ from dotenv import load_dotenv
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT_DIR / ".env")
+# override=True so edits to .env are picked up on uvicorn --reload without
+# needing a full process restart (default load_dotenv leaves existing env vars
+# alone and silently uses the stale values).
+load_dotenv(ROOT_DIR / ".env", override=True)
 
 
 class Settings:
@@ -17,17 +20,20 @@ class Settings:
     NCBI_API_KEY: str = os.getenv("NCBI_API_KEY", "")
     NCBI_EMAIL: str = os.getenv("NCBI_EMAIL", "medcite@example.com")
 
-    CHROMADB_PATH: Path = ROOT_DIR / os.getenv("CHROMADB_PATH", "data/chromadb").lstrip("./")
-    SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.80"))
+    LANCEDB_PATH: Path = ROOT_DIR / os.getenv("LANCEDB_PATH", "data/lancedb").lstrip("./")
+    SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
 
-    SYNTHESIZER_MODEL: str = os.getenv("SYNTHESIZER_MODEL", "gemini-2.0-flash")
+    SYNTHESIZER_MODEL: str = os.getenv("SYNTHESIZER_MODEL", "gemini-2.5-flash")
+    SYNTHESIZER_FALLBACK_MODEL: str = os.getenv(
+        "SYNTHESIZER_FALLBACK_MODEL", "gemini-2.5-flash-lite"
+    )
     VERIFIER_MODEL: str = os.getenv("VERIFIER_MODEL", "llama-3.3-70b-versatile")
     EMBEDDING_MODEL: str = os.getenv(
         "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
     )
 
-    CHROMA_COLLECTION: str = "medcite_articles"
+    LANCE_TABLE_NAME: str = "medcite_articles"
 
     RAW_DATA_DIR: Path = ROOT_DIR / "data" / "raw"
 
@@ -48,5 +54,5 @@ class Settings:
 
 
 settings = Settings()
-settings.CHROMADB_PATH.mkdir(parents=True, exist_ok=True)
+settings.LANCEDB_PATH.mkdir(parents=True, exist_ok=True)
 settings.RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)

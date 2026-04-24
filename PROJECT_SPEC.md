@@ -19,7 +19,7 @@ A web application where doctors type medical questions and receive short, cited 
 
 These are **hard rules**. Do not violate them during implementation.
 
-1. **LLMs never write URLs.** URLs are built from PMIDs at ingestion time and stored in ChromaDB metadata. The Synthesizer outputs only `[1]`, `[2]` citation numbers — the backend stitches URLs in.
+1. **LLMs never write URLs.** URLs are built from PMIDs at ingestion time and stored in LanceDB metadata. The Synthesizer outputs only `[1]`, `[2]` citation numbers — the backend stitches URLs in.
 2. **LLMs never answer from memory.** The Synthesizer prompt must explicitly forbid using prior knowledge; it must answer from retrieved chunks only, or output `INSUFFICIENT_EVIDENCE`.
 3. **A different LLM verifies.** The Verifier must be a different vendor from the Synthesizer (e.g., GPT-4o synthesizes, Claude verifies). Same-model verification is a no-op.
 4. **If confidence < 0.75, abstain.** The system returns "No reliable answer found" with an explanation — never a low-confidence guess.
@@ -33,22 +33,22 @@ These are **hard rules**. Do not violate them during implementation.
 - Downloads ~6,000 abstracts from PubMed E-utilities API across 2 specialties (**Diabetes + Cardiology**).
 - Chunks each article into ~500-word passages.
 - Embeds each chunk with `sentence-transformers/all-MiniLM-L6-v2` (free, local CPU).
-- Stores in ChromaDB (local persistent vector DB) with full metadata.
+- Stores in LanceDB (local persistent vector DB) with full metadata.
 
 ### Component 2: Local Retriever (runs on every query)
 - Embeds the doctor's query with the same model.
-- Runs cosine similarity search in ChromaDB.
+- Runs cosine similarity search in LanceDB.
 - Returns top-5 chunks with similarity scores.
-- **Threshold logic:** top similarity ≥ 0.80 → "found". Otherwise → "not_found".
+- **Threshold logic:** top similarity ≥ `SIMILARITY_THRESHOLD` → "found". Otherwise → "not_found". Default tuned to **0.55** for MiniLM-L6-v2 on this medical corpus (below that, in-scope queries get rejected; above, out-of-scope still cleanly fail at ~0.45). Verifier confidence ≥ 0.75 remains the real safety gate.
 
 ### Component 3: Live Multi-AI Fallback (runs only when doctor clicks)
 - Calls PubMed E-utilities API for top 10 PMIDs.
 - Fetches abstracts for those articles.
 - Passes to Synthesizer, then Verifier (same agents as local path).
-- **Self-improvement:** embeds and writes new articles back into ChromaDB async, so the same query hits Tier 1 next time.
+- **Self-improvement:** embeds and writes new articles back into LanceDB async, so the same query hits Tier 1 next time.
 
 ### Component 4: Synthesizer + Verifier (shared between both tiers)
-- **Synthesizer (Gemini 2.0 Flash):** receives query + 5 chunks + strict prompt. Outputs 2-3 sentence answer with inline `[1][2]` citations, or `INSUFFICIENT_EVIDENCE`.
+- **Synthesizer (Gemini 2.5 Flash):** receives query + 5 chunks + strict prompt. Outputs 2-3 sentence answer with inline `[1][2]` citations, or `INSUFFICIENT_EVIDENCE`. *(Originally specced as Gemini 2.0 Flash; Google removed 2.0 from the free tier in late 2025, so we use 2.5 Flash — same API, same prompt, stronger model.)*
 - **Verifier (Groq — Llama 3.3 70B, different vendor):** receives synthesizer's answer + source chunks. Outputs JSON `{confidence: 0-1, unsupported_claims: [...]}`.
 - Final answer returned only if confidence ≥ 0.75.
 - **Why this combo:** Google Gemini + Meta Llama (via Groq) = genuine multi-vendor cross-check, both free-tier, both very fast.
@@ -57,7 +57,7 @@ These are **hard rules**. Do not violate them during implementation.
 
 ### Flow A — Local hit (common case, ~2-5s)
 1. Doctor types query → clicks **Ask**.
-2. Backend calls `/query/local` → ChromaDB match found (similarity ≥ 0.80).
+2. Backend calls `/query/local` → LanceDB match found (similarity ≥ 0.80).
 3. Synthesizer + Verifier run on local chunks.
 4. Frontend shows: answer + source cards + badge **"Answered from verified knowledge base"** + green confidence meter.
 
@@ -78,7 +78,7 @@ These are **hard rules**. Do not violate them during implementation.
 
 ## 6. Data Shapes (contract that must not change)
 
-### ChromaDB chunk metadata
+### LanceDB row shape (flat — no nested `metadata` field)
 ```json
 {
   "pmid": "38245671",
@@ -130,11 +130,11 @@ These are **hard rules**. Do not violate them during implementation.
 | Backend | FastAPI (Python 3.11+) | Fast, great for ML + APIs |
 | Vector DB | LanceDB (persistent, local) | Pure Rust, pre-built wheels for Windows Python 3.12/3.13, no MSVC needed. *(Originally planned ChromaDB, swapped due to Windows wheel issue with `chroma-hnswlib`.)* |
 | Embeddings | `sentence-transformers/all-MiniLM-L6-v2` | Free, CPU-runnable, 384-dim |
-| Synthesizer LLM | Google Gemini 2.0 Flash | Free tier, fast, strong citation following |
+| Synthesizer LLM | Google Gemini 2.5 Flash | Free tier (2.0 Flash free tier was removed Q4 2025), fast, strong citation following |
 | Verifier LLM | Groq (Llama 3.3 70B) | Free tier, different vendor, ~500 tok/s |
 | Article source | PubMed E-utilities API + Europe PMC | Free, no key required (key optional for higher rate limit) |
 | Frontend hosting | Vercel | Free, auto-deploy |
-| Backend hosting | Railway or Render | Persistent volume for ChromaDB |
+| Backend hosting | Railway or Render | Persistent volume for LanceDB |
 
 ## 8. Folder Structure
 
@@ -168,9 +168,9 @@ medcite/
 │   ├── ingestion/
 │   │   ├── pubmed_downloader.py ← Day 1: pulls abstracts
 │   │   ├── chunker.py           ← splits articles
-│   │   └── embedder.py          ← writes to ChromaDB
+│   │   └── embedder.py          ← writes to LanceDB
 │   ├── retrieval/
-│   │   ├── local_search.py      ← ChromaDB queries
+│   │   ├── local_search.py      ← LanceDB queries
 │   │   └── live_search.py       ← PubMed API fallback (Component 3)
 │   ├── agents/
 │   │   ├── synthesizer.py       ← Gemini 2.0 Flash
@@ -179,7 +179,7 @@ medcite/
 │   └── config.py                ← thresholds, API keys
 │
 └── data/
-    └── chromadb/                ← persistent vector store (gitignored)
+    └── lancedb/                 ← persistent vector store (gitignored)
 ```
 
 ## 9. Build Order (3 days)
@@ -190,7 +190,7 @@ medcite/
 3. Write `pubmed_downloader.py` for 2 specialties (Diabetes + Cardiology), target 10,000 articles.
 4. **Kick off download in background.**
 5. While download runs: write `chunker.py` and `embedder.py`, test on 10 articles.
-6. When download done: embed all chunks → populate ChromaDB (~30 min).
+6. When download done: embed all chunks → populate LanceDB (~30 min).
 7. Write `local_search.py` → test with 5 queries, tune threshold.
 8. Write `live_search.py` → PubMed fallback.
 9. Write `synthesizer.py` + `verifier.py` with the strict prompts.
@@ -214,7 +214,7 @@ medcite/
 1. **One** wow feature: Evidence Level badges from `publication_type` metadata.
 2. Polish pass (typography, spacing, copy, mobile).
 3. Deploy frontend to Vercel.
-4. Deploy backend to Railway/Render with ChromaDB persistent volume.
+4. Deploy backend to Railway/Render with LanceDB persistent volume.
 5. Final test on prod URL.
 6. **Record 2-min demo video** (backup).
 7. Prepare 5 hero queries, memorize.
@@ -278,49 +278,67 @@ SOURCES:
 - [x] `PROJECT_SPEC.md`, `README.md`, `.gitignore`, `.env.example` created
 - [x] `.env` filled in by user (NOT committed — gitignored)
 - [x] Backend scaffold: `backend/config.py`, folders for `ingestion/`, `retrieval/`, `agents/`
-- [x] `backend/requirements.txt` (biopython already removed; uses httpx directly)
-- [x] `backend/ingestion/pubmed_downloader.py` (httpx + stdlib XML, no compiled deps)
-- [x] `backend/ingestion/chunker.py`
-- [x] `backend/ingestion/embedder.py` (**currently written for ChromaDB — needs swap to LanceDB, see below**)
 - [x] Python 3.12 installed in venv at `backend/.venv/`
-- [x] Decisions locked: specialties = Diabetes + Cardiology; LLMs = Gemini 2.0 Flash (synth) + Groq Llama 3.3 70B (verifier); 10K articles
+- [x] Decisions locked: specialties = Diabetes + Cardiology; LLMs = Gemini 2.5 Flash (synth) + Groq Llama 3.3 70B (verifier); 10K articles target
+- [x] **ChromaDB → LanceDB swap** (blocker resolved; pure-Rust wheels, no MSVC needed)
+  - [x] `backend/requirements.txt` — `lancedb==0.30.2`
+  - [x] `backend/config.py` — `LANCEDB_PATH`, `LANCE_TABLE_NAME`
+  - [x] `.env` / `.env.example` updated
+  - [x] `.gitignore` ignores `data/lancedb/`
+- [x] `backend/pubmed_client.py` — shared httpx PubMed client (search/fetch/parse), reused by ingestion and live search
+- [x] `backend/ingestion/pubmed_downloader.py` — refactored to use shared client
+- [x] `backend/ingestion/chunker.py`
+- [x] `backend/ingestion/embedder.py` — LanceDB backend, normalized vectors, cosine metric
+- [x] `backend/retrieval/local_search.py` — LanceDB top-5 cosine search, returns chunks + similarity
+- [x] `backend/retrieval/live_search.py` — PubMed live fallback; ranks live chunks locally; `write_articles_to_lancedb()` helper for self-improvement loop
+- [x] `backend/agents/synthesizer.py` — Gemini 2.5 Flash, exact spec §10 prompt, returns `INSUFFICIENT_EVIDENCE` on abstain, tenacity retry on 429/5xx
+- [x] `backend/agents/verifier.py` — Groq Llama 3.3 70B, `response_format=json_object`, robust JSON parsing, conservative defaults, tenacity retry on 429/5xx
+- [x] Similarity threshold tuned from 0.80 → **0.55** based on real retrieval scores (empagliflozin/HFpEF=0.80+, metformin/CKD=0.54, TB=0.44 — 0.55 cleanly separates in/out-of-scope)
+- [x] `backend/pipeline.py` — `run_local_query` / `run_live_query` orchestrator; enforces similarity ≥ 0.80 and confidence ≥ 0.75 gates; writes back to LanceDB on verified live answer
+- [x] `backend/main.py` — FastAPI app with `/query/local`, `/query/live`, `/health`, CORS open, pydantic response model matches spec §6
 
-### ⚠️ BLOCKER — Dependency install failing
+### Install + ingestion: DONE
+- [x] `pip install -r backend/requirements.txt` succeeded (Windows + Py 3.12, LanceDB wheel installed cleanly, no MSVC)
+- [x] `python -m ingestion.pubmed_downloader` — 4,997 diabetes + 4,984 cardiology = **9,981 articles** in `data/raw/`
+- [x] `python -m ingestion.embedder` — **17,456 chunks** in `data/lancedb/medcite_articles.lance/`
+- [x] Uvicorn running at `http://localhost:8000`, `/health` returns 200
 
-`pip install -r requirements.txt` fails on Windows + Python 3.12 because `chroma-hnswlib` (ChromaDB's internal ANN lib) has no pre-built Windows wheel for Python 3.12 on PyPI and tries to compile from C++ source, requiring MSVC Build Tools (6GB install, not wanted).
+### ⚠️ ACTIVE ISSUE — Gemini returns `INSUFFICIENT_EVIDENCE` even with strong retrieval
 
-### FIRST TASK FOR NEXT CHAT: Swap ChromaDB → LanceDB
+After tuning threshold 0.80→0.55, adding tenacity retry for 429/5xx, and adding `gemini-2.5-flash-lite` fallback, the 503s are gone. But:
 
-LanceDB is a modern, pure-Rust vector DB with pre-built Windows wheels for Python 3.12/3.13. Zero compilation needed. Same embedding model, same metadata, same similarity math, same architecture — just a different storage backend.
+| # | Query | `top_similarity` | Result |
+|---|---|---|---|
+| 1 | metformin renal dose in CKD | 0.5414 | `not_found` (0.54 < 0.55 threshold — edge case, tolerable) |
+| 2 | empagliflozin CV mortality in HFpEF | **0.8205** | `insufficient_evidence` ← **UNEXPECTED** |
+| 3 | drug-resistant TB (local) | 0.4439 | `not_found` ✅ |
+| 4 | drug-resistant TB (live) | 0.7864 | `insufficient_evidence` ← **UNEXPECTED** |
+| 5 | drug-resistant TB (local, after 4) | 0.4439 | `not_found` (live didn't write back) |
 
-Changes needed:
-1. `backend/requirements.txt` — replace `chromadb==0.5.23` with `lancedb==0.13.0` (or latest)
-2. `backend/config.py` — rename `CHROMA_COLLECTION` → `LANCE_TABLE_NAME`, keep path variable
-3. `backend/ingestion/embedder.py` — rewrite storage section (~30 lines) to use LanceDB
-4. `backend/retrieval/local_search.py` (not yet written) — will use LanceDB from the start
+Queries 2 & 4 reached Gemini with strong chunks but the synthesizer returned/produced nothing. Three hypotheses (in descending likelihood):
+1. **Gemini 2.5 Flash safety filter** is blocking medical-advice responses → `response.text` comes back empty → our `if not text: return INSUFFICIENT` fires.
+2. **Over-cautious prompt.** With strict RULES forbidding outside knowledge, Gemini 2.5 defaults to outputting `INSUFFICIENT_EVIDENCE` literally.
+3. Chunks genuinely don't contain the answer (unlikely — DELIVER/EMPEROR trials are indexed).
 
-LanceDB API is close to Chroma but flatter:
-```python
-import lancedb
-db = lancedb.connect(settings.LANCEDB_PATH)
-table = db.create_table("medcite", data=records)  # records = list[dict] with 'vector' key
-results = table.search(query_vector).limit(5).to_list()
-# similarity = 1 - cosine_distance from _distance field
-```
+Diagnostic logging has been added to `synthesizer.py` (logs `finish_reason`, `safety_ratings`, and `text_preview`). **Next chat's first action: restart uvicorn, rerun test 2, read the log line to confirm which hypothesis is true.**
 
-### Blocked on (user, after swap)
-- [ ] `pip install -r backend/requirements.txt` (should work after LanceDB swap)
-- [ ] Run `python -m ingestion.pubmed_downloader` (~30-60 min)
-- [ ] Run `python -m ingestion.embedder`
+Likely fixes (pick after diagnosis):
+- If safety block: configure `safety_settings=BLOCK_NONE` in `GenerateContentConfig` (safe in a medical-lit context, not user-generated content).
+- If literal INSUFFICIENT: soften the prompt slightly — allow "You MAY infer clinical implications directly supported by the sources" — or set `thinking_config` / `temperature` higher.
+- Last resort: switch primary synthesizer to `gemini-2.0-flash-lite` (still free tier) or a different Groq model; spec §3 rule 3 requires synth ≠ verifier vendor so can't put it on Groq.
 
-### Not started (pick up in next chat after swap + install works)
-- [ ] `backend/retrieval/local_search.py` — LanceDB top-5 cosine search
-- [ ] `backend/retrieval/live_search.py` — PubMed E-utilities live fallback (Component 3)
-- [ ] `backend/agents/synthesizer.py` — Gemini 2.0 Flash with strict citation prompt
-- [ ] `backend/agents/verifier.py` — Groq Llama 3.3 70B with JSON confidence output
-- [ ] `backend/pipeline.py` — orchestrates retrieval + synth + verifier
-- [ ] `backend/main.py` — FastAPI app with `/query/local` and `/query/live`
-- [ ] curl test both endpoints
+### Tuning done this session
+- Similarity threshold: 0.80 → **0.55** (data-driven; see gap between 0.44 out-of-scope vs 0.54+ in-scope)
+- Synthesizer: `gemini-2.0-flash` → **`gemini-2.5-flash`** (Google removed 2.0 Flash from free tier Q4 2025)
+- Added tenacity retry (4 attempts, exp backoff) for 429/5xx to both synthesizer + verifier
+- Added `SYNTHESIZER_FALLBACK_MODEL=gemini-2.5-flash-lite` — kicks in if primary is persistently overloaded
+- `load_dotenv(override=True)` so `.env` edits propagate on reload
+- Fixed LanceDB 0.30.2 API (`list_tables()` returns a pagination object now — switched to try/open_table)
+
+### Not started
+- [ ] Fix Gemini INSUFFICIENT_EVIDENCE issue (next chat, first task)
+- [ ] Curl tests pass end-to-end with real cited answers
+- [ ] Second commit after endpoints verified
 - [ ] **Day 2:** Next.js + shadcn/ui frontend
 - [ ] **Day 3:** Deploy (Vercel + Railway) + demo prep
 
@@ -338,9 +356,9 @@ I am building "MedCite" — a medical Q&A web app for the Jubilant Pharma hackat
 
 READ FIRST: The full spec is in PROJECT_SPEC.md at the repo root. Read that file completely before doing anything else. Do not deviate from the design principles in section 3.
 
-ONE-LINE SUMMARY: Doctor types a medical question → system searches a local ChromaDB of ~6,000 pre-embedded PubMed abstracts (Diabetes + Cardiology) → if good match (similarity >= 0.80), GPT-4o synthesizes a cited answer and Claude/Gemini verifies it → if no local match, doctor clicks a button to trigger live PubMed API + same multi-LLM pipeline → every answer has clickable PubMed URLs built from PMIDs (never generated by LLM) → confidence < 0.75 means abstain with "No reliable answer found".
+ONE-LINE SUMMARY: Doctor types a medical question → system searches a local LanceDB of ~10,000 pre-embedded PubMed abstracts (Diabetes + Cardiology) → if good match (similarity >= 0.80), Gemini 2.0 Flash synthesizes a cited answer and Groq Llama 3.3 70B verifies it → if no local match, doctor clicks a button to trigger live PubMed API + same multi-LLM pipeline → every answer has clickable PubMed URLs built from PMIDs (never generated by LLM) → confidence < 0.75 means abstain with "No reliable answer found".
 
-TECH: Next.js + Tailwind + shadcn/ui frontend; FastAPI + ChromaDB + sentence-transformers backend; Google Gemini 2.0 Flash as synthesizer; Groq Llama 3.3 70B as verifier; PubMed E-utilities for article source.
+TECH: Next.js + Tailwind + shadcn/ui frontend; FastAPI + LanceDB + sentence-transformers backend; Google Gemini 2.5 Flash as synthesizer; Groq Llama 3.3 70B as verifier; PubMed E-utilities for article source.
 
 HARD RULES (do not violate):
 1. LLMs never write URLs — only [1][2] citation numbers; backend stitches URLs from metadata

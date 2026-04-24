@@ -5,7 +5,9 @@ python-dotenv==1.0.1
 pydantic==2.9.2
 
 # ---- Vector DB & embeddings ----
-chromadb==0.5.23
+# LanceDB chosen over ChromaDB: pure Rust, pre-built Windows wheels for
+# Python 3.12/3.13, no MSVC Build Tools required.
+lancedb==0.30.2
 sentence-transformers==3.3.1
 
 # ---- LLM providers ----
