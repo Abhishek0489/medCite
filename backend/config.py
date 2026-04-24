@@ -24,9 +24,18 @@ class Settings:
     SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
 
-    SYNTHESIZER_MODEL: str = os.getenv("SYNTHESIZER_MODEL", "gemini-2.5-flash")
+    # gemini-2.5-flash-lite is the PRIMARY synthesizer. Rationale:
+    # gemini-2.5-flash is a "thinking" model that burns hundreds of internal
+    # reasoning tokens against max_output_tokens before emitting any visible
+    # text; on this "read 5 chunks -> cite what's there" task it either
+    # truncates the answer mid-sentence (MAX_TOKENS) or talks itself into
+    # abstaining. flash-lite has much tighter reasoning and produces stable,
+    # complete, cited answers at temperature=0. We keep flash as the fallback
+    # in case flash-lite is capacity-constrained, since free-tier quotas pool
+    # separately between the two models.
+    SYNTHESIZER_MODEL: str = os.getenv("SYNTHESIZER_MODEL", "gemini-2.5-flash-lite")
     SYNTHESIZER_FALLBACK_MODEL: str = os.getenv(
-        "SYNTHESIZER_FALLBACK_MODEL", "gemini-2.5-flash-lite"
+        "SYNTHESIZER_FALLBACK_MODEL", "gemini-2.5-flash"
     )
     VERIFIER_MODEL: str = os.getenv("VERIFIER_MODEL", "llama-3.3-70b-versatile")
     EMBEDDING_MODEL: str = os.getenv(

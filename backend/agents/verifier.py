@@ -15,6 +15,7 @@ abstains.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sys
 import threading
@@ -31,6 +32,9 @@ from tenacity import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings  # noqa: E402
+
+
+_log = logging.getLogger("medcite.verifier")
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -158,6 +162,14 @@ def verify(synthesizer_output: str, chunks: list[dict]) -> dict:
     if not isinstance(unsupported, list):
         unsupported = [str(unsupported)]
     unsupported = [str(x) for x in unsupported]
+
+    _log.info(
+        "verify: confidence=%.3f unsupported=%d answer_preview=%r raw_preview=%r",
+        confidence,
+        len(unsupported),
+        synthesizer_output[:120],
+        raw[:200],
+    )
 
     return {
         "confidence": confidence,

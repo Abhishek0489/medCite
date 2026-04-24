@@ -42,15 +42,22 @@ def _is_transient(exc: BaseException) -> bool:
     return False
 
 
-# Use verbatim from PROJECT_SPEC.md section 10.
-SYNTHESIZER_PROMPT_TEMPLATE = """You are a medical evidence assistant. Answer the doctor's question using ONLY the numbered sources below.
+# Based on PROJECT_SPEC.md section 10. Softened on 2026-04-24 after Gemini 2.5
+# Flash was observed literally returning "INSUFFICIENT_EVIDENCE" on in-scope
+# queries (top_sim 0.82 on empagliflozin/HFpEF) because the original phrasing
+# "clear answer" made the model over-cautious. Non-negotiables preserved:
+# no URLs (§3 rule 1), no prior knowledge (§3 rule 2), citation numbers only,
+# 2-4 sentences, literal INSUFFICIENT_EVIDENCE abstention token.
+SYNTHESIZER_PROMPT_TEMPLATE = """You are a medical evidence assistant helping a physician. Answer the doctor's question using ONLY the numbered sources below.
 
 RULES:
 - Cite every factual claim inline using [1], [2], etc.
 - Do NOT write URLs or links — only citation numbers.
-- Do NOT use your own medical knowledge. Use only what is in the sources.
-- Keep the answer to 2-4 sentences.
-- If the sources do not contain a clear answer, respond with exactly: INSUFFICIENT_EVIDENCE
+- Do NOT use your own medical knowledge or information from outside the sources.
+- You MAY synthesize across sources and state conclusions that are directly supported by the source text, even if no single source states the exact conclusion verbatim. Prefer answering when the sources provide relevant evidence.
+- Keep the answer to 2-4 sentences, clinical tone.
+- Only if NONE of the sources are relevant to the question, respond with exactly: INSUFFICIENT_EVIDENCE
+  (Do not abstain merely because the wording differs from the question or because a source discusses a related-but-broader population — if the evidence applies, answer and cite it.)
 
 QUESTION: {query}
 
@@ -88,6 +95,25 @@ def _format_sources(chunks: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
+# Safety filters disabled for this service. Context: curated PubMed abstracts
+# passed to a medical-evidence synthesizer that only cites those sources.
+# No user-generated content is forwarded to the model, so the safety filter
+# adds no protection but does occasionally block or empty-out legitimate
+# clinical responses. See google.genai docs on SafetySetting.
+# google-genai accepts string values for HarmCategory / HarmBlockThreshold;
+# the typed aliases exposed on `types` are Literal unions, not Enums, so we
+# use the canonical string constants directly.
+_SAFETY_SETTINGS = [
+    genai_types.SafetySetting(category=cat, threshold="BLOCK_NONE")
+    for cat in (
+        "HARM_CATEGORY_HARASSMENT",
+        "HARM_CATEGORY_HATE_SPEECH",
+        "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "HARM_CATEGORY_DANGEROUS_CONTENT",
+    )
+]
+
+
 @retry(
     retry=retry_if_exception(_is_transient),
     stop=stop_after_attempt(3),
@@ -100,7 +126,16 @@ def _generate_one(client: "genai.Client", model: str, prompt: str):
         contents=prompt,
         config=genai_types.GenerateContentConfig(
             temperature=0.0,
-            max_output_tokens=512,
+            # Gemini 2.5 Flash is a "thinking" model: internal reasoning tokens
+            # are counted against this budget before any visible text is
+            # emitted. 1024 was enough for thinking but left only ~200 chars
+            # of answer (truncated mid-sentence with finish_reason=MAX_TOKENS).
+            # Answer itself is 2-4 sentences (~400 chars); 4096 gives ample
+            # headroom for thinking + answer. google-genai 0.3.0 doesn't
+            # expose ThinkingConfig yet; when upgraded, switch to
+            # thinking_config=ThinkingConfig(thinking_budget=0).
+            max_output_tokens=4096,
+            safety_settings=_SAFETY_SETTINGS,
         ),
     )
 

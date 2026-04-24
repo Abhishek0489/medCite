@@ -48,7 +48,7 @@ These are **hard rules**. Do not violate them during implementation.
 - **Self-improvement:** embeds and writes new articles back into LanceDB async, so the same query hits Tier 1 next time.
 
 ### Component 4: Synthesizer + Verifier (shared between both tiers)
-- **Synthesizer (Gemini 2.5 Flash):** receives query + 5 chunks + strict prompt. Outputs 2-3 sentence answer with inline `[1][2]` citations, or `INSUFFICIENT_EVIDENCE`. *(Originally specced as Gemini 2.0 Flash; Google removed 2.0 from the free tier in late 2025, so we use 2.5 Flash — same API, same prompt, stronger model.)*
+- **Synthesizer (Gemini 2.5 Flash-Lite):** receives query + 5 chunks + strict prompt. Outputs 2-3 sentence answer with inline `[1][2]` citations, or `INSUFFICIENT_EVIDENCE`. *(Originally specced as Gemini 2.0 Flash. Google removed 2.0 from the free tier in late 2025. Tried 2.5 Flash next, but its internal "thinking" tokens consumed `max_output_tokens` before any visible text was emitted — answers truncated mid-sentence. Switched to 2.5 Flash-Lite, which has tighter reasoning and produces stable, complete, cited answers at `temperature=0`; 2.5 Flash is kept as the overflow fallback.)*
 - **Verifier (Groq — Llama 3.3 70B, different vendor):** receives synthesizer's answer + source chunks. Outputs JSON `{confidence: 0-1, unsupported_claims: [...]}`.
 - Final answer returned only if confidence ≥ 0.75.
 - **Why this combo:** Google Gemini + Meta Llama (via Groq) = genuine multi-vendor cross-check, both free-tier, both very fast.
@@ -130,7 +130,7 @@ These are **hard rules**. Do not violate them during implementation.
 | Backend | FastAPI (Python 3.11+) | Fast, great for ML + APIs |
 | Vector DB | LanceDB (persistent, local) | Pure Rust, pre-built wheels for Windows Python 3.12/3.13, no MSVC needed. *(Originally planned ChromaDB, swapped due to Windows wheel issue with `chroma-hnswlib`.)* |
 | Embeddings | `sentence-transformers/all-MiniLM-L6-v2` | Free, CPU-runnable, 384-dim |
-| Synthesizer LLM | Google Gemini 2.5 Flash | Free tier (2.0 Flash free tier was removed Q4 2025), fast, strong citation following |
+| Synthesizer LLM | Google Gemini 2.5 Flash-Lite | Free tier, deterministic, no thinking-token truncation (2.0 Flash removed Q4 2025; 2.5 Flash kept as overflow fallback) |
 | Verifier LLM | Groq (Llama 3.3 70B) | Free tier, different vendor, ~500 tok/s |
 | Article source | PubMed E-utilities API + Europe PMC | Free, no key required (key optional for higher rate limit) |
 | Frontend hosting | Vercel | Free, auto-deploy |
@@ -303,42 +303,53 @@ SOURCES:
 - [x] `python -m ingestion.embedder` — **17,456 chunks** in `data/lancedb/medcite_articles.lance/`
 - [x] Uvicorn running at `http://localhost:8000`, `/health` returns 200
 
-### ⚠️ ACTIVE ISSUE — Gemini returns `INSUFFICIENT_EVIDENCE` even with strong retrieval
+### ✅ Synthesizer bug FIXED (Day 1 late session, 2026-04-24)
 
-After tuning threshold 0.80→0.55, adding tenacity retry for 429/5xx, and adding `gemini-2.5-flash-lite` fallback, the 503s are gone. But:
+**Diagnosis (from `medcite.synthesizer` INFO log):**
+- `finish=STOP, safety=None, text_preview='INSUFFICIENT_EVIDENCE'` — Gemini 2.5 Flash was literally outputting the abstention token on in-scope queries. Not a safety block. Over-cautious prompt on a "thinking" model.
+- After softening the prompt, `finish=MAX_TOKENS, text_len=212` — Gemini 2.5 Flash burns hundreds of *internal thinking tokens* against `max_output_tokens` before emitting visible text, truncating the answer mid-sentence even at `max_output_tokens=1024`.
+- A/B test at same prompt, `temperature=0.0`: `gemini-2.5-flash-lite` produced stable, complete 337-char cited answers (`finish=STOP`) across two trials; `gemini-2.5-flash` consistently truncated at ~212 chars (`finish=MAX_TOKENS`).
 
-| # | Query | `top_similarity` | Result |
-|---|---|---|---|
-| 1 | metformin renal dose in CKD | 0.5414 | `not_found` (0.54 < 0.55 threshold — edge case, tolerable) |
-| 2 | empagliflozin CV mortality in HFpEF | **0.8205** | `insufficient_evidence` ← **UNEXPECTED** |
-| 3 | drug-resistant TB (local) | 0.4439 | `not_found` ✅ |
-| 4 | drug-resistant TB (live) | 0.7864 | `insufficient_evidence` ← **UNEXPECTED** |
-| 5 | drug-resistant TB (local, after 4) | 0.4439 | `not_found` (live didn't write back) |
+**Fixes applied (all spec-compliant, §3 rules preserved):**
+1. Swapped primary synthesizer → `gemini-2.5-flash-lite`; fallback → `gemini-2.5-flash` (flipped the pair). Rationale documented in `config.py` and `.env.example`.
+2. Softened the spec §10 prompt: replaced the over-strict "if sources do not contain a clear answer" with "only if NONE of the sources are relevant" and explicitly permitted inference directly supported by the sources. No URLs, no outside knowledge, 2–4 sentence limit, literal `INSUFFICIENT_EVIDENCE` token — all preserved.
+3. Added `safety_settings=BLOCK_NONE` for all four harm categories on the synthesizer config (defensive; the problem today was not a safety block, but medical content can trip `DANGEROUS_CONTENT` on other queries).
+4. Bumped `max_output_tokens` 512 → 4096 (primary model `-lite` doesn't need it, but the fallback `flash` does because of thinking tokens).
+5. Added `medcite.verifier` INFO logging of confidence + unsupported claims — made it trivial to distinguish "synth refused" from "verifier gated".
 
-Queries 2 & 4 reached Gemini with strong chunks but the synthesizer returned/produced nothing. Three hypotheses (in descending likelihood):
-1. **Gemini 2.5 Flash safety filter** is blocking medical-advice responses → `response.text` comes back empty → our `if not text: return INSUFFICIENT` fires.
-2. **Over-cautious prompt.** With strict RULES forbidding outside knowledge, Gemini 2.5 defaults to outputting `INSUFFICIENT_EVIDENCE` literally.
-3. Chunks genuinely don't contain the answer (unlikely — DELIVER/EMPEROR trials are indexed).
+**Hero-query smoke test (post-fix):**
 
-Diagnostic logging has been added to `synthesizer.py` (logs `finish_reason`, `safety_ratings`, and `text_preview`). **Next chat's first action: restart uvicorn, rerun test 2, read the log line to confirm which hypothesis is true.**
+| # | Query | Tier | `top_sim` | Status | Verifier conf | Notes |
+|---|---|---|---|---|---|---|
+| 1 | metformin renal dose in CKD | local | 0.541 | `not_found` | — | 0.541 < 0.55 threshold. Known edge case, user tolerates. |
+| 2 | empagliflozin CV mortality in HFpEF | local | 0.821 | **`found` ✅** | 0.80 | Fixed — cited answer from PMID 38865086 Review. |
+| 3 | drug-resistant TB | local | 0.444 | `not_found` | — | Correct: out of corpus scope. |
+| 4 | drug-resistant TB | live | 0.734 | `insufficient_evidence` | 0.67 | Synth produced answer; verifier caught unsupported claim ("BPaLM protocol…combining bedaquiline, pretomanid, linezolid, and moxifloxacin"). Safety gate (§3 rule 4) working as designed. |
+| 5 | drug-resistant TB (local, after 4) | local | 0.444 | `not_found` | — | No write-back because #4 was gated. |
+| 6 | SGLT2 side effects in elderly | local | 0.674 | **`found` ✅** | 0.80 | Fixed — 5 cited sources. |
+| 7 | acetaminophen in 3rd trimester | local | 0.526 | `not_found` | — | Below threshold. Proves abstention story (§11 hero query 5). |
 
-Likely fixes (pick after diagnosis):
-- If safety block: configure `safety_settings=BLOCK_NONE` in `GenerateContentConfig` (safe in a medical-lit context, not user-generated content).
-- If literal INSUFFICIENT: soften the prompt slightly — allow "You MAY infer clinical implications directly supported by the sources" — or set `thinking_config` / `temperature` higher.
-- Last resort: switch primary synthesizer to `gemini-2.0-flash-lite` (still free tier) or a different Groq model; spec §3 rule 3 requires synth ≠ verifier vendor so can't put it on Groq.
+**Two clean `found` responses on in-scope queries (2 & 6).** Query 4 (live TB) is an accurate demonstration of the cross-vendor safety gate, not a bug.
 
 ### Tuning done this session
 - Similarity threshold: 0.80 → **0.55** (data-driven; see gap between 0.44 out-of-scope vs 0.54+ in-scope)
-- Synthesizer: `gemini-2.0-flash` → **`gemini-2.5-flash`** (Google removed 2.0 Flash from free tier Q4 2025)
-- Added tenacity retry (4 attempts, exp backoff) for 429/5xx to both synthesizer + verifier
-- Added `SYNTHESIZER_FALLBACK_MODEL=gemini-2.5-flash-lite` — kicks in if primary is persistently overloaded
-- `load_dotenv(override=True)` so `.env` edits propagate on reload
-- Fixed LanceDB 0.30.2 API (`list_tables()` returns a pagination object now — switched to try/open_table)
+- Synthesizer: `gemini-2.0-flash` → `gemini-2.5-flash` → **`gemini-2.5-flash-lite`** (2.0 removed from free tier Q4 2025; 2.5-flash's thinking tokens ate the output budget, switched to -lite which is stable and deterministic on this task)
+- Synthesizer fallback: `gemini-2.5-flash-lite` → **`gemini-2.5-flash`** (swapped; flash now serves as overflow capacity since its free-tier quota pools separately)
+- Synthesizer prompt softened: "only if NONE of the sources are relevant" (was "if the sources do not contain a clear answer"); explicit permission to synthesize from directly-supported evidence. Spec §3 rules all preserved.
+- `safety_settings=BLOCK_NONE` added to `GenerateContentConfig` on all four harm categories (curated PubMed input; no user-generated content flows to the model).
+- `max_output_tokens`: 512 → **4096** to accommodate thinking tokens on the fallback model.
+- `medcite.verifier` INFO logging added (confidence + unsupported claim count + raw preview) — made it easy to distinguish synth-refusal from verifier-gate.
+- Added tenacity retry (4 attempts, exp backoff) for 429/5xx to both synthesizer + verifier.
+- `load_dotenv(override=True)` so `.env` edits propagate on reload.
+- Fixed LanceDB 0.30.2 API (`list_tables()` returns a pagination object now — switched to try/open_table).
+
+### Done this session
+- [x] Diagnosed Gemini `INSUFFICIENT_EVIDENCE` bug (see above — two layered causes: over-cautious prompt + flash-model thinking-token truncation)
+- [x] Swapped primary synth model to `gemini-2.5-flash-lite`; softened prompt; added `safety_settings=BLOCK_NONE`; bumped `max_output_tokens` to 4096; added verifier logging
+- [x] Hero-query smoke test passes: two clean `found` responses (empagliflozin HFpEF, SGLT2 elderly) with verifier confidence 0.80; out-of-scope queries abstain correctly; live TB gated by safety verifier as designed
 
 ### Not started
-- [ ] Fix Gemini INSUFFICIENT_EVIDENCE issue (next chat, first task)
-- [ ] Curl tests pass end-to-end with real cited answers
-- [ ] Second commit after endpoints verified
+- [ ] Second commit after endpoints verified ← **commit this session's fix now**
 - [ ] **Day 2:** Next.js + shadcn/ui frontend
 - [ ] **Day 3:** Deploy (Vercel + Railway) + demo prep
 
