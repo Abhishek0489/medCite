@@ -220,6 +220,52 @@ medcite/
 7. Prepare 5 hero queries, memorize.
 8. Write 1-page pitch, rehearse Q&A.
 
+#### Day 3 optional upgrades (only AFTER backup demo is recorded)
+
+Sequence matters: record the backup demo on the current, tested system first.
+Then upgrade. Never touch a working system twice in the same day.
+
+**A. Synthesizer model swap — try Gemini 2.5 Pro**
+- User has access to Gemini Pro. Pro > Flash-Lite on medical reasoning,
+  citation adherence, and tends to produce higher verifier confidence (fewer
+  false abstentions like the live-TB BPaLM case).
+- One-line swap: `SYNTHESIZER_MODEL=gemini-2.5-pro` in `.env`.
+- Caveats: Pro is a thinking model — bump `max_output_tokens` 4096 → 8192
+  (or higher) in `agents/synthesizer.py` to avoid MAX_TOKENS truncation.
+  Pro is ~3–8s per call vs ~1s for Flash-Lite, and free-tier RPM is lower
+  (~2 vs ~15). Keep `SYNTHESIZER_FALLBACK_MODEL=gemini-2.5-flash-lite` so
+  429s auto-route to the faster model mid-demo.
+- A/B test on the 5 hero queries; keep Pro only if it wins cleanly on 4/5.
+
+**B. Corpus upgrade — add specialties, more depth**
+- Embedder is fast (~minutes for 17K chunks on CPU). Bottleneck is the
+  PubMed download (10 req/s with NCBI key). Plenty of room to grow.
+- Recommended additions to `config.py > SPECIALTIES`:
+  - `infectious_diseases` — unlocks the TB hero query locally (Tier 1),
+    no need to wait for live fetch.
+  - `oncology` — broad audience appeal.
+  - `nephrology` — strengthens metformin/CKD (currently 0.541, edge of
+    0.55 threshold).
+  - Optional: `neurology`, `pulmonology`, `ob_gyn`.
+- Consider bumping `ARTICLES_PER_SPECIALTY` 5000 → 7500 for deeper coverage.
+- Target final corpus: ~35K articles / ~60K chunks. Still comfortable for
+  local CPU cosine search.
+- After re-ingestion, re-run the hero-query smoke test. If top_similarity
+  distribution shifted, re-tune `SIMILARITY_THRESHOLD` (aim for 0.05+
+  margin between lowest in-scope and highest out-of-scope).
+
+**C. Widen date range (cheapest win)**
+- Current PubMed query filters to 2015+. Going back to 2010 brings in more
+  foundational reviews without exploding corpus size.
+- Edit the `2015` in `SPECIALTIES` queries in `config.py`.
+
+**Recommended Day 3 timeline:**
+1. Morning — polish UI, deploy frontend + backend, record backup demo on
+   the currently-working corpus.
+2. Afternoon — model A/B test (option A), then corpus upgrade (option B)
+   and re-tune threshold if needed. Re-run hero smoke test. Push.
+3. Live demo runs on upgraded system; backup video is the safety net.
+
 ## 10. The Strict Prompts (use verbatim)
 
 ### Synthesizer prompt
@@ -352,6 +398,11 @@ SOURCES:
 - [ ] Second commit after endpoints verified ← **commit this session's fix now**
 - [ ] **Day 2:** Next.js + shadcn/ui frontend
 - [ ] **Day 3:** Deploy (Vercel + Railway) + demo prep
+- [ ] **Day 3 optional upgrades (see §9 Day 3 → "optional upgrades"):**
+  - [ ] A/B test `gemini-2.5-pro` as synthesizer (user has Pro access)
+  - [ ] Add Infectious Diseases + Oncology + Nephrology specialties; bump `ARTICLES_PER_SPECIALTY` to 7500
+  - [ ] Re-tune `SIMILARITY_THRESHOLD` after re-ingestion if distribution shifts
+- [ ] **Minor polish:** live write-back wrote 21 articles but the immediate follow-up local query still returned `top_sim=0.4439` (pre-writeback value). Either in-process LanceDB table handle caching stale state, or PubMed-fetch query string ≠ embedded query. Non-blocking.
 
 ### Key env vars user has set (already in `.env`)
 - `GOOGLE_API_KEY` (Gemini)
