@@ -128,7 +128,7 @@ These are **hard rules**. Do not violate them during implementation.
 | Frontend | Next.js 14 (App Router) + TypeScript | Fast dev, clean deploys |
 | Styling | Tailwind CSS + shadcn/ui | Clinical look out of the box |
 | Backend | FastAPI (Python 3.11+) | Fast, great for ML + APIs |
-| Vector DB | ChromaDB (persistent, local) | Free, simple, zero-setup |
+| Vector DB | LanceDB (persistent, local) | Pure Rust, pre-built wheels for Windows Python 3.12/3.13, no MSVC needed. *(Originally planned ChromaDB, swapped due to Windows wheel issue with `chroma-hnswlib`.)* |
 | Embeddings | `sentence-transformers/all-MiniLM-L6-v2` | Free, CPU-runnable, 384-dim |
 | Synthesizer LLM | Google Gemini 2.0 Flash | Free tier, fast, strong citation following |
 | Verifier LLM | Groq (Llama 3.3 70B) | Free tier, different vendor, ~500 tok/s |
@@ -273,24 +273,48 @@ SOURCES:
 ## 12. Current Progress
 
 ### Done
-- [x] Git repo initialized (local only, no GitHub remote yet)
+- [x] Git repo initialized AND pushed to GitHub: `https://github.com/Abhishek0489/medCite.git` (remote: `origin`, branch: `main`)
+- [x] First commit pushed: "Initial scaffold: spec, env template, ingestion pipeline"
 - [x] `PROJECT_SPEC.md`, `README.md`, `.gitignore`, `.env.example` created
+- [x] `.env` filled in by user (NOT committed — gitignored)
 - [x] Backend scaffold: `backend/config.py`, folders for `ingestion/`, `retrieval/`, `agents/`
-- [x] `backend/requirements.txt` (Python 3.12 compatible — no biopython, uses httpx directly)
+- [x] `backend/requirements.txt` (biopython already removed; uses httpx directly)
 - [x] `backend/ingestion/pubmed_downloader.py` (httpx + stdlib XML, no compiled deps)
 - [x] `backend/ingestion/chunker.py`
-- [x] `backend/ingestion/embedder.py`
-- [x] Decisions locked: specialties = Diabetes + Cardiology; LLMs = Gemini 2.0 Flash (synth) + Groq Llama 3.3 70B (verifier); 10K articles; local git only
+- [x] `backend/ingestion/embedder.py` (**currently written for ChromaDB — needs swap to LanceDB, see below**)
+- [x] Python 3.12 installed in venv at `backend/.venv/`
+- [x] Decisions locked: specialties = Diabetes + Cardiology; LLMs = Gemini 2.0 Flash (synth) + Groq Llama 3.3 70B (verifier); 10K articles
 
-### In progress (user side)
-- [ ] Install Python 3.12 (Python 3.13 was blocking — no Windows wheels for `chroma-hnswlib`)
-- [ ] `rm -rf backend/.venv && py -3.12 -m venv backend/.venv`
-- [ ] `pip install -r backend/requirements.txt`
-- [ ] Run `python -m ingestion.pubmed_downloader` (long-running, ~30-60 min)
+### ⚠️ BLOCKER — Dependency install failing
+
+`pip install -r requirements.txt` fails on Windows + Python 3.12 because `chroma-hnswlib` (ChromaDB's internal ANN lib) has no pre-built Windows wheel for Python 3.12 on PyPI and tries to compile from C++ source, requiring MSVC Build Tools (6GB install, not wanted).
+
+### FIRST TASK FOR NEXT CHAT: Swap ChromaDB → LanceDB
+
+LanceDB is a modern, pure-Rust vector DB with pre-built Windows wheels for Python 3.12/3.13. Zero compilation needed. Same embedding model, same metadata, same similarity math, same architecture — just a different storage backend.
+
+Changes needed:
+1. `backend/requirements.txt` — replace `chromadb==0.5.23` with `lancedb==0.13.0` (or latest)
+2. `backend/config.py` — rename `CHROMA_COLLECTION` → `LANCE_TABLE_NAME`, keep path variable
+3. `backend/ingestion/embedder.py` — rewrite storage section (~30 lines) to use LanceDB
+4. `backend/retrieval/local_search.py` (not yet written) — will use LanceDB from the start
+
+LanceDB API is close to Chroma but flatter:
+```python
+import lancedb
+db = lancedb.connect(settings.LANCEDB_PATH)
+table = db.create_table("medcite", data=records)  # records = list[dict] with 'vector' key
+results = table.search(query_vector).limit(5).to_list()
+# similarity = 1 - cosine_distance from _distance field
+```
+
+### Blocked on (user, after swap)
+- [ ] `pip install -r backend/requirements.txt` (should work after LanceDB swap)
+- [ ] Run `python -m ingestion.pubmed_downloader` (~30-60 min)
 - [ ] Run `python -m ingestion.embedder`
 
-### Not started (pick up in next chat)
-- [ ] `backend/retrieval/local_search.py` — ChromaDB top-k cosine search
+### Not started (pick up in next chat after swap + install works)
+- [ ] `backend/retrieval/local_search.py` — LanceDB top-5 cosine search
 - [ ] `backend/retrieval/live_search.py` — PubMed E-utilities live fallback (Component 3)
 - [ ] `backend/agents/synthesizer.py` — Gemini 2.0 Flash with strict citation prompt
 - [ ] `backend/agents/verifier.py` — Groq Llama 3.3 70B with JSON confidence output
@@ -300,7 +324,7 @@ SOURCES:
 - [ ] **Day 2:** Next.js + shadcn/ui frontend
 - [ ] **Day 3:** Deploy (Vercel + Railway) + demo prep
 
-### Key env vars user has set
+### Key env vars user has set (already in `.env`)
 - `GOOGLE_API_KEY` (Gemini)
 - `GROQ_API_KEY`
 - `NCBI_API_KEY` + `NCBI_EMAIL`
