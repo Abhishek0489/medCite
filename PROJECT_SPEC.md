@@ -224,77 +224,100 @@ medcite/
 7. Prepare 5 hero queries, memorize.
 8. Write 1-page pitch, rehearse Q&A.
 
-#### Day 3 optional upgrades (only AFTER backup demo is recorded)
+#### Day 3 polish — locked scope (do AFTER backup demo is recorded)
 
 Sequence matters: record the backup demo on the current, tested system first.
 Then upgrade. Never touch a working system twice in the same day.
 
-**A. Synthesizer model swap — try Gemini 2.5 Pro**
-- User has access to Gemini Pro. Pro > Flash-Lite on medical reasoning,
-  citation adherence, and tends to produce higher verifier confidence (fewer
-  false abstentions like the live-TB BPaLM case).
-- One-line swap: `SYNTHESIZER_MODEL=gemini-2.5-pro` in `.env`.
-- Caveats: Pro is a thinking model — bump `max_output_tokens` 4096 → 8192
-  (or higher) in `agents/synthesizer.py` to avoid MAX_TOKENS truncation.
-  Pro is ~3–8s per call vs ~1s for Flash-Lite, and free-tier RPM is lower
-  (~2 vs ~15). Keep `SYNTHESIZER_FALLBACK_MODEL=gemini-2.5-flash-lite` so
-  429s auto-route to the faster model mid-demo.
-- A/B test on the 5 hero queries; keep Pro only if it wins cleanly on 4/5.
+**Active scope (Day 3 PM, post-recording session):** three additive polish
+items only. Each is small, independently revertable, and reduces demo-day
+risk. The original optional list (Pro model A/B test, corpus expansion,
+date-range widening) was deliberately dropped to keep the demo system small
+and the moving parts few — see "Out of scope" at the bottom.
 
-**B. Corpus upgrade — add specialties, more depth**
-- Embedder is fast (~minutes for 17K chunks on CPU). Bottleneck is the
-  PubMed download (10 req/s with NCBI key). Plenty of room to grow.
-- Recommended additions to `config.py > SPECIALTIES`:
-  - `infectious_diseases` — unlocks the TB hero query locally (Tier 1),
-    no need to wait for live fetch.
-  - `oncology` — broad audience appeal.
-  - `nephrology` — strengthens metformin/CKD (currently 0.541, edge of
-    0.55 threshold).
-  - Optional: `neurology`, `pulmonology`, `ob_gyn`.
-- Consider bumping `ARTICLES_PER_SPECIALTY` 5000 → 7500 for deeper coverage.
-- Target final corpus: ~35K articles / ~60K chunks. Still comfortable for
-  local CPU cosine search.
-- After re-ingestion, re-run the hero-query smoke test. If top_similarity
-  distribution shifted, re-tune `SIMILARITY_THRESHOLD` (aim for 0.05+
-  margin between lowest in-scope and highest out-of-scope).
+**A. Live-search resilience (~30 min, additive)**
+- Problem we hit on Day 3 PM: PubMed E-utilities ESearch returned 0 PMIDs
+  for the recommended showstopper query *"Best first-line antibiotic for
+  community-acquired pneumonia in adults 2024"*. The term matcher rejects
+  long natural-language sentences with grammatical filler ("Best ... for
+  ... in adults"). `/query/live` then silently produced a 0-source
+  `not_found` in ~4s, dead-ending the demo. Any judge who types a question
+  naturally (instead of using the curated hero chips) hits the same bug.
+- Fix: in `backend/retrieval/live_search.py` (or a small helper in
+  `backend/pubmed_client.py`), if `search_pmids()` returns an empty list,
+  retry **once** with a stop-words-stripped version of the query
+  (drop: `the, a, an, of, for, in, on, with, and, or, is, are, was, were,
+  be, been, being, what, which, who, whom, whose, when, where, why, how,
+  best, first-line, recommended, dose`). Cap retry at 1; if still empty,
+  return `[]` honestly so the existing not_found UI fires.
+- Optional second pass (only if first fix isn't enough): also strip leading
+  capitalised filler words (`Best`, `Recommended`, `What is the`).
+- Spec rules unaffected — this is purely a query-string transform before
+  the PubMed call. The synthesizer/verifier still see the same chunks; the
+  cross-vendor verification gate (§3 rule 3+4) still applies.
 
-**C. Widen date range (cheapest win)**
-- Current PubMed query filters to 2015+. Going back to 2010 brings in more
-  foundational reviews without exploding corpus size.
-- Edit the `2015` in `SPECIALTIES` queries in `config.py`.
+**B. Frontend health-check retry (~15 min, UI-only)**
+- Problem: `frontend/app/page.jsx` calls `checkHealth()` once on mount. If
+  the HF Space is mid-cold-start (~12 s wake), the call fails and the
+  header shows a red "Backend offline" pill that misleads judges into
+  thinking the system is down. We hit this in the Day-3 PM diagnostic
+  session.
+- Fix: retry the health check 3× with 5 s exponential backoff before
+  flipping the pill to offline. Show a third state — *"Backend warming…"*
+  in slate — between attempts so the UX is honest about what's happening.
+- Files: only `frontend/app/page.jsx` (the `useEffect` that calls
+  `checkHealth`). No backend change. No new components.
 
-**D. PWA install layer (45-60 min, very low risk — purely additive)**
-- Goal: judges can "Install" the deployed website from Chrome/Safari and it
-  lands on the home screen with the stethoscope icon, opens fullscreen, no
-  browser chrome. Same code path as the website — no native rewrite, no
-  React Native, no Capacitor.
-- Hard prerequisite: backend must be deployed publicly (HTTPS) first.
-  Localhost cannot be installed as a PWA from someone else's device.
+**C. PWA install layer (~45 min, additive, no service worker)**
+- Goal: judges can "Install" the deployed site from Chrome/Safari and land
+  on their home screen with the stethoscope icon, fullscreen, no browser
+  chrome. Same code path as the website — no native rewrite, no React
+  Native, no Capacitor.
+- Hard prerequisite: backend served over HTTPS — DONE (HF Spaces).
 - Do NOT add a service worker. Manifest + icons + iOS meta tags only.
   Service workers are where PWA bugs live (stale caches, wedged installs);
-  modern browsers will still show the "Install" affordance without one.
+  modern browsers still show the "Install" affordance without one.
 - Files to create:
   - `frontend/public/icon.svg` — sky-600 rounded square + white Lucide
     stethoscope path, 512×512 viewBox with 25% inner padding (safe zone
     for Android maskable icons).
   - `frontend/public/manifest.json` — `name`, `short_name: "MedCite"`,
     `start_url: "/"`, `display: "standalone"`, `background_color: "#f8fafc"`,
-    `theme_color: "#0284c7"`, icons referencing `/icon.svg` with `sizes: "any"`.
+    `theme_color: "#0284c7"`, icons referencing `/icon.svg` with
+    `sizes: "any"`.
   - `frontend/app/layout.jsx` — add `metadata.manifest = "/manifest.json"`,
     `metadata.icons.icon` and `apple`, plus `metadata.appleWebApp` block.
 - Test: `curl http://localhost:3000/manifest.json` returns JSON, then on
   the deployed URL open Chrome → 3-dots menu → "Install MedCite" should
   appear. iOS Safari → Share → Add to Home Screen.
-- Sequence: do this AFTER deploy + backup demo. Skip entirely if anything
-  in deploy goes sideways — the website demo is already enough.
+- Skip entirely if anything in deploy goes sideways — the website demo is
+  already enough.
 
-**Recommended Day 3 timeline:**
-1. Morning — polish UI, deploy frontend + backend, record backup demo on
-   the currently-working corpus (deployed prod URL, not localhost).
-2. Afternoon — model A/B test (option A), then corpus upgrade (option B)
-   and re-tune threshold if needed. Re-run hero smoke test. Push.
-3. Late afternoon (optional) — PWA layer (option D). 45 min, additive.
-4. Live demo runs on upgraded system; backup video is the safety net.
+**Optional D. HF Space keep-alive (~10 min, no code)**
+- HF Spaces free tier auto-sleeps after 48 h of idle — first request after
+  sleep is a ~12 s cold-start (measured Day 3 PM, see §"HF Spaces caveats").
+- Mitigation: UptimeRobot free tier (50 monitors free) — create one
+  HTTP(s) monitor pointing at `https://Tony0489-MedCite-api.hf.space/health`,
+  5-minute interval. Or a Windows Scheduled Task that runs
+  `Invoke-RestMethod https://Tony0489-MedCite-api.hf.space/health` hourly.
+- Skip if you can keep `/health` warm manually during the 24 h before the
+  demo (set a phone alarm every 4 h — the sleep window is 48 h).
+
+**Out of scope (deliberately dropped — do NOT pursue without removing this section first)**
+- ~~Synthesizer model swap to `gemini-2.5-pro`~~ — added complexity
+  (latency 3–8 s vs ~1 s, lower RPM, MAX_TOKENS tuning needed) for a marginal
+  citation-adherence win. Current Flash-Lite is producing conf=0.80 on every
+  in-scope query; the gate is doing its job. Re-evaluate post-hackathon.
+- ~~Corpus expansion (add infectious_diseases / oncology / nephrology;
+  bump ARTICLES_PER_SPECIALTY to 7500)~~ — would require re-ingestion
+  (30–60 min), re-tuning `SIMILARITY_THRESHOLD`, re-deploying to HF
+  (re-running `deploy/hf/sync.ps1` with the new lance dir, ~5 min upload),
+  and would absorb the H. pylori showstopper into Tier 1 — meaning we'd
+  need to find yet another out-of-corpus topic for the live-multi-AI demo.
+  Not worth the risk on the day.
+- ~~Widen `2015 → 2010` in SPECIALTIES queries~~ — same re-ingestion +
+  re-deploy cost as above for marginal value (more foundational reviews
+  but they're all already covered well enough by the 2015+ corpus).
 
 ## 10. The Strict Prompts (use verbatim)
 
@@ -501,14 +524,15 @@ Zero laptop dependency. Total query latency through the full chain: ~8 s (vs ~3 
 3. **Self-improvement write-back persists in the container's writable fs only.** If the container restarts (Space rebuild, HF maintenance), live-search-absorbed articles since the last image build are lost. The bundled image already contains the 21 TB articles + 18 metformin/CKD articles absorbed on Day 1-2, so the TB self-improvement story is preserved across restarts.
 4. **Re-deploy = re-run `.\deploy\hf\sync.ps1 -HfUser Tony0489 -HfSpace MedCite-api -HfToken hf_xxx`.** The script wipes the sibling deploy dir and force-pushes a fresh single-commit history every time — clean and idempotent. New backend code edits or a freshly re-ingested LanceDB get picked up automatically because the script copies from the live `backend/` and `data/lancedb/` trees.
 
-### Day 3 — Not started (in this exact order)
-- [ ] **3.3 Record 2-minute backup demo video** on the deployed prod URL `https://abhi04-medcite.vercel.app` (or the original alias `https://frontend-sandy-phi-72.vercel.app` — both point at the same deployment; NOT localhost, NOT the trycloudflare URL). Hit all 3 flows: Tier-1 hit (#1 empagliflozin/HFpEF), self-improvement Tier-1 (#2 TB 2024), live escalation showstopper (#3 *H. pylori first-line eradication 2024* — first click ever; the originally-planned CAP-antibiotics phrasing was dropped on Day 3 PM after diagnosing that PubMed ESearch returns 0 PMIDs for it), abstention (#4 acetaminophen pregnancy). **DO NOT skip — never demo without insurance.**
-- [ ] **3.4 (Optional) Day-3 upgrades** in this order; revert any that don't cleanly win on the 5 hero queries:
-  - [ ] A. A/B test `SYNTHESIZER_MODEL=gemini-2.5-pro` (Tier 1 quota now safe). Bump `max_output_tokens` to 8192 in `agents/synthesizer.py`. Keep Flash-Lite as fallback. To deploy: set the env var as a Space Secret on HF + re-run `deploy/hf/sync.ps1` to rebuild the image.
-  - [ ] B. Add `infectious_diseases` + `oncology` + `nephrology` specialties; bump `ARTICLES_PER_SPECIALTY` to 7500. Re-run ingestion locally (~30-60 min), then re-sync to HF (the sync script copies the new lance dir). Re-tune `SIMILARITY_THRESHOLD` if distribution shifts. Note: this absorbs the new live-search showstopper into Tier 1, so pick a fresh out-of-corpus query for the demo afterward.
-  - [ ] C. Widen `2015` → `2010` in `SPECIALTIES` queries in `config.py` (cheapest win, more foundational reviews). Re-run ingestion + re-sync to HF.
-  - [ ] D. **PWA install layer** (see §9 Day 3 option D). 45 min, additive, no native rewrite. Lets judges install the website as an app on their phone home screen. Hard prereq: backend deployed via HTTPS — DONE.
-- [ ] **3.5 Pitch + Q&A prep.** 1-page pitch script. Rehearse the 4-sentence trust pitch ("ChatGPT starts with the LLM and asks it to remember sources. We start with PubMed and ask the LLM to summarise…").
+### Day 3 — Remaining (locked scope, in this exact order)
+- [~] **3.3 Record 2-minute backup demo video** — being recorded by user this session (Day 3 PM, 2026-04-25). Prod URL `https://abhi04-medcite.vercel.app` (new vanity alias added Day 3 PM; original `https://frontend-sandy-phi-72.vercel.app` still works as a fallback). 4 hero flows: empagliflozin/HFpEF (Tier-1 hit), TB 2024 (Tier-1, self-improvement story), *H. pylori first-line eradication 2024* (live-multi-AI showstopper, first click ever), acetaminophen 3rd trimester (abstention). Hero chips on the homepage are pre-populated in this exact order — clicking them is the recording script. Do NOT click H. pylori until camera rolls; first click writes articles back into the cache and kills the demo.
+- [ ] **3.4 Polish — locked scope (see §9 "Day 3 polish — locked scope" for full detail)**:
+  - [ ] **A. Live-search resilience** (~30 min) — retry PubMed ESearch with stop-words stripped if first call returns 0 PMIDs, so judges typing natural-language questions don't dead-end the live pipeline. Backend-only change in `retrieval/live_search.py` or `pubmed_client.py`. Re-deploy via `deploy/hf/sync.ps1`.
+  - [ ] **B. Frontend health-check retry** (~15 min) — `useEffect` in `app/page.jsx` retries `/health` 3× with 5 s exponential backoff before flipping the pill to red. Add a "Backend warming…" intermediate state so the UX is honest. UI-only.
+  - [ ] **C. PWA install layer** (~45 min) — files: `frontend/public/icon.svg`, `frontend/public/manifest.json`, metadata block in `frontend/app/layout.jsx`. NO service worker (manifest + iOS meta tags only). Hard prereq HTTPS — DONE. Lets judges install the site to their phone home screen.
+  - [ ] **(Optional) D. HF Space keep-alive** (~10 min, no code) — UptimeRobot free monitor on `/health` at 5-min interval, OR a Windows Scheduled Task hitting `/health` hourly. Eliminates the 12 s cold-start judges would otherwise see on first visit. Skip if you can keep it warm manually during the 24 h before demo (sleep window is 48 h).
+  - **Out of scope, deliberately dropped to control complexity:** Pro model A/B test, corpus expansion (specialties + ARTICLES_PER_SPECIALTY 7500), date-range widening (2015 → 2010). All require re-ingestion + HF redeploy + re-tuning thresholds, and one of them would kill the H. pylori showstopper. See §9 "Out of scope" for the full rationale.
+- [ ] **3.5 Pitch + Q&A prep.** 1-page pitch script. Rehearse the 4-sentence trust pitch ("ChatGPT starts with the LLM and asks it to remember sources. We start with PubMed and ask the LLM to summarise…") and the 9 anticipated Q&A answers from `PITCH.md §9`.
 
 ### Security debt — rotate before going public
 - The HF write token `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` was pasted into the agent chat during the deploy session. It's only scoped to write to `Tony0489/*` Spaces, but rotate it via <https://huggingface.co/settings/tokens> when you have a moment.
@@ -527,141 +551,17 @@ Zero laptop dependency. Total query latency through the full chain: ~8 s (vs ~3 
 
 ## Resume Prompt (paste this if Cursor context fills up)
 
+> The canonical, kept-in-sync version of this prompt lives at the repo root in
+> `RESUME_PROMPT.txt`. If anything below diverges from `RESUME_PROMPT.txt`,
+> trust `RESUME_PROMPT.txt` — that's the file Cursor users actually paste
+> into a fresh chat.
+
 ```
 I'm continuing work on "MedCite" — a medical Q&A web app for the Jubilant
-Pharma hackathon.
-
-STEP 1 — READ FIRST:
-Read PROJECT_SPEC.md at the repo root COMPLETELY before taking any action.
-Non-negotiables in §3. API shape locked in §6. Component list in §8.
-Day 3 step list in §9 + §12 "Day 3 — Not started". Current state in §12.
-
-CURRENT STATE (end of Day-3 morning, all pushed to origin/main):
-- Last commit on main: 392a975. Most recent commits:
-    392a975 docs: add PITCH.md — pitch deck reference with demo script and Q&A
-    563d6a2 fix(backend): UTF-8 stdio + disable tqdm + log tracebacks for cloud deploy
-    706b6ef chore: Day-3 plan edits to PROJECT_SPEC.md
-    68b8df1 chore: refresh hero queries (§11) and disable Next.js dev indicator badge
-- Backend on :8000 healthy, 17,456 LanceDB chunks (Diabetes + Cardiology +
-  ~21 TB articles + ~18 metformin/CKD articles auto-absorbed via the live
-  multi-AI write-back loop on Day 1-2). Verified end-to-end this morning:
-  empagliflozin/HFpEF Tier-1 hit returns status=found, conf=0.80, top_sim=
-  0.8205, 5 sources with full quoted_passage + PubMed + DOI URLs.
-- Three production-safety fixes shipped in 563d6a2 — required for cloud
-  deploy because Render/Railway/HF Spaces all redirect stdout to log
-  capture pipes:
-    1. model.encode(..., show_progress_bar=False) in single-query encodes
-       (retrieval/local_search.py and live_search.py). Tqdm CR writes to
-       a redirected stderr on Windows raise OSError [Errno 22] mid-
-       request, which surfaces as "Local pipeline failed: [Errno 22]
-       Invalid argument" with no traceback — same bug will fire in cloud
-       hosting; this fix is mandatory.
-    2. sys.stdout/stderr.reconfigure(encoding='utf-8', errors='replace')
-       at startup in main.py — backstop for any non-cp1252 chars (em-
-       dash, ≥, …) emitted by synth/verify loggers.
-    3. Full traceback + exception type logged via medcite.api logger on
-       /query/local and /query/live failures — debugging a 500 was ~30
-       min today without it.
-- PITCH.md added at repo root (392a975) — pitch deck reference with
-  elevator pitch, 7 hard rules slide content, architecture, all 5 hero
-  queries with exact demo lines, 2-min demo script, 9 anticipated Q&A
-  with rehearsed answers, the numbers, the closing line. Read this
-  before building slides; do NOT regenerate.
-- Synthesizer: gemini-2.5-flash-lite (primary) + gemini-2.5-flash (fallback).
-  Google AI Studio is on Tier 1 (billing enabled), so quota is no longer a
-  concern — Pro is now safely viable for the Day-3 A/B test.
-- Verifier: llama-3.3-70b-versatile via Groq (free tier, 100K TPD ≈ ~50
-  verifier calls/day; plenty for the demo).
-- Frontend: Next.js 16 + React 19 + Tailwind 4 + shadcn/ui in JS mode.
-  Six components per §8 all built as .jsx. State machine in app/page.jsx
-  covers all flows. Dev indicator badge disabled in next.config.mjs. All
-  5 hero queries verified end-to-end by user with screenshots.
-- §11 hero queries refreshed to reflect current corpus reality:
-  TB became a Tier-1 hit overnight via self-improvement (good demo story).
-  Live-search showstopper is now "H. pylori first-line eradication 2024"
-  (with "levetiracetam status epilepticus dose" as the backup). The original
-  CAP-antibiotics phrasing was dropped on Day 3 PM — PubMed ESearch returns
-  0 PMIDs for long natural-language sentences, silently dead-ending the
-  live pipeline. Use terse medical-term phrasing for any live-search query.
-  DO NOT click before stage time or write-back will absorb it.
-
-DAY-3 DEPLOY DECISION (locked in previous session):
-- Backend: Cloudflare Tunnel from laptop (free, zero cold-start, zero
-  cost, ~5 min setup). NOT Render/Railway — their free tiers can't fit
-  sentence-transformers + LanceDB in 512MB RAM and have 30s cold starts;
-  paid tiers cost $5-7/mo for what's a weekend demo. Cloudflare Tunnel
-  exposes the existing localhost:8000 (already verified, write-back
-  cache intact, API keys never leave the laptop) at a stable
-  *.trycloudflare.com URL via outbound-only connection.
-- Frontend: Vercel free tier (Next.js native).
-- Tradeoff: backend dies if laptop is off. Laptop is on at the venue
-  anyway and the 2-min backup demo video is the safety net.
-
-TODAY — DAY 3 REMAINING (in this exact order, see §12 "Day 3"):
-1. Install cloudflared (winget install --id Cloudflare.cloudflared OR
-   download msi). Quick tunnel first to verify pipeline:
-       cloudflared tunnel --url http://localhost:8000
-   Get the *.trycloudflare.com URL it prints. Verify /health from a
-   different network (phone hotspot, or curl from webhook.site).
-   Optional: upgrade to a named tunnel (cloudflared tunnel login →
-   create → route dns) if you want a stable URL across restarts.
-2. Deploy frontend to Vercel:
-       cd frontend && npx vercel --prod
-   Set NEXT_PUBLIC_API_URL=<tunnel URL from step 1> as an env var in
-   the Vercel dashboard. Redeploy. Verify Tier-1 hero query works on
-   the prod URL (use empagliflozin/HFpEF — should return conf 0.80).
-3. Record 2-min backup demo video on the prod URL (NOT localhost).
-   Hit all 4 flows: Tier-1 hit (empagliflozin/HFpEF), self-improvement
-   Tier-1 (drug-resistant TB 2024), live escalation showstopper
-   ("H. pylori first-line eradication 2024" — first click ever; the
-   original CAP antibiotics phrasing was dropped Day 3 PM after PubMed
-   ESearch returned 0 PMIDs for it), abstention (acetaminophen 3rd
-   trimester). NEVER skip — this is the insurance.
-4. ONLY THEN: optional upgrades (§9 Day 3 options A-D):
-   A. Try gemini-2.5-pro as synth (Tier 1 quota safe; bump
-      max_output_tokens to 8192). Keep only if it wins 4/5 hero
-      queries cleanly.
-   B. Add infectious_diseases / oncology / nephrology specialties;
-      bump ARTICLES_PER_SPECIALTY to 7500. Re-run ingestion (~30-60
-      min). Re-tune SIMILARITY_THRESHOLD if distribution shifts.
-   C. Widen 2015 → 2010 in SPECIALTIES queries (cheapest win).
-   D. PWA install layer (45 min, additive, no service worker — see §9
-      Day 3 option D for exact files to create). Lets judges install
-      the site as an app on their phone. Hard prereq: backend reachable
-      via HTTPS (step 1 done).
-5. Pitch + Q&A prep — read PITCH.md cover to cover, build slides from
-   it, rehearse the trust pitch and the 9 Q&A answers.
-
-HARD RULES (from §3, do not violate):
-1. LLMs never write URLs — backend stitches them from PMIDs in metadata
-2. Synthesizer prompt forbids prior knowledge; chunks-only or
-   INSUFFICIENT_EVIDENCE
-3. Verifier must be a different vendor (Google synth + Meta/Llama verify)
-4. Confidence < 0.75 → abstain
-5. Live search only runs when user clicks button (never automatic)
-6. Every source card shows quoted passage + clickable PubMed + DOI URL
-7. UI is a clinical tool (one question, one answer card) — NOT a chatbot
-
-WORKFLOW:
-- Commit after each logical piece (cloudflared install verified, vercel
-  env var set, prod URL smoke-passed, demo video recorded, etc).
-  Conventional commit messages.
-- Never commit .env or frontend/.env.local (both gitignored at repo root).
-- Repo: https://github.com/Abhishek0489/medCite.git on branch main.
-  Last commit pushed: 392a975.
-
-ENV: Windows + Git Bash + Python 3.12 venv at backend/.venv/. Node 22 LTS.
-NCBI_API_KEY, GOOGLE_API_KEY (Tier 1 billing), GROQ_API_KEY all in .env.
-Frontend env at frontend/.env.local has NEXT_PUBLIC_API_URL=http://localhost:8000
-— this stays the same for local dev; flip to the tunnel URL only on
-Vercel via dashboard env var (so localhost dev keeps working).
-
-START THE TWO DEV SERVERS LOCALLY FIRST so you can sanity-check before
-exposing via tunnel:
-  Terminal 1: cd backend && source .venv/Scripts/activate &&
-              uvicorn main:app --reload --port 8000
-  Terminal 2: cd frontend && npm run dev
-Then move on to step 1 (cloudflared tunnel).
-
-Continue from where the previous session left off. Reference PROJECT_SPEC.md for anything you're unsure about.
+Pharma hackathon. See RESUME_PROMPT.txt at the repo root for the live
+session-handover prompt (URLs, last commit, current scope, what to do next).
+Read PROJECT_SPEC.md COMPLETELY before taking any action — non-negotiables
+in §3, API shape in §6, component list in §8, polish scope in §9
+("Day 3 polish — locked scope") and §12 ("Day 3 — Remaining"). Read
+PITCH.md before building any slides; do NOT regenerate it.
 ```
