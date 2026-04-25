@@ -1,7 +1,7 @@
 I'm continuing work on "MedCite" — a medical Q&A web app for the Jubilant Pharma hackathon.
 
 STEP 1 — READ FIRST:
-1. PITCH.md at the repo root — this is the canonical content source for the deck. Elevator pitch (§1), problem (§2), what we built (§3), the 7 hard rules (§4), architecture diagram (§5), the trust pitch verbatim (§6), the 5 hero queries with exact demo lines (§7), 2-min demo script (§8), 9 anticipated Q&A (§9), the numbers (§10), tech stack (§11), closing line (§13). DO NOT regenerate this — slide content is locked.
+1. PITCH.md at the repo root — this is the canonical content source for the deck. Elevator pitch (§1), problem (§2), what we built (§3), the 7 hard rules (§4), architecture diagram (§5), the trust pitch verbatim (§6), the 5 hero queries with exact demo lines (§7), 2-min demo script (§8), 12 anticipated Q&A including the "vague conversational query" rebuttal (§9), the numbers (§10), tech stack (§11), closing line (§13), master query sets (§14). DO NOT regenerate this — slide content is locked.
 2. PROJECT_SPEC.md — non-negotiables in §3, API shape in §6, hero queries in §11, current state in §12.
 
 ONLY REMAINING TASK: BUILD THE PITCH DECK FROM PITCH.md.

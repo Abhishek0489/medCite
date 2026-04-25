@@ -736,7 +736,7 @@ def slide_9_qa(prs):
 
     add_text(
         s, Inches(0.95), Inches(6.95), Inches(11.5), Inches(0.35),
-        "Full Q&A bank: 9 rehearsed answers in PITCH.md §9",
+        "Full Q&A bank: 12 rehearsed answers in PITCH.md §9",
         size=11, color=MUTED, italic=True, align=PP_ALIGN.CENTER,
     )
 

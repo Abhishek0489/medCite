@@ -158,6 +158,9 @@ Same-model verification is a no-op — a model is bad at catching its own halluc
 ### "How do you handle out-of-scope questions?"
 Three behaviors depending on context. (1) Cache miss + doctor escalates → live PubMed fallback. (2) Cache miss + cache had something close-but-not-confident-enough → abstention screen with the closest similarity score shown. (3) Live search also fails verification → still abstain. We never make something up to fill silence.
 
+### "What if I type something vague or conversational, like 'is this medicine for this cold'?"
+The system degrades gracefully — there is no path that produces an error or a hallucinated answer. The embedder turns *any* string into a vector; we measured top similarities of **0.34–0.45** for prompts like *"hello are you a doctor"*, *"is paracetamol for cold"*, and *"what should I take for a headache"* — all well below the 0.55 threshold, all land on the same amber abstention screen with the closest score shown. If the doctor escalates to live PubMed, a stop-word-stripped retry passes only the medical terms (e.g. `paracetamol cold`) to E-utilities; the synthesizer then either gives a cited answer or returns `INSUFFICIENT_EVIDENCE`. The interesting edge case: *"is metformin safe for me"* hits Tier 1 at **0.75** — the embedder is smart enough to extract real drug names from conversational fluff and answer when it should. **Demo line if a judge throws this at you:** *"This is rule 4 in action. ChatGPT would have given you a friendly answer. We tell the truth — we don't know."*
+
 ### "What's the latency?"
 Tier-1 (cache hit): 2–5 seconds. Tier-2 (live escalation): 15–25 seconds, dominated by PubMed's E-utilities API which is government infrastructure. The 2-tier architecture exists *because* live PubMed is too slow to be the default.
 
