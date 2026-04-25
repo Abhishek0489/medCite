@@ -11,6 +11,16 @@ export const metadata = {
   title: "MedCite — Cited medical answers",
   description:
     "Doctor-grade Q&A over a curated PubMed knowledge base, with cross-vendor verification and a live multi-AI fallback.",
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "MedCite",
+  },
 };
 
 export default function RootLayout({ children }) {

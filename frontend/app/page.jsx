@@ -40,6 +40,8 @@ const HERO_QUERIES = [
   "Side effects of SGLT2 inhibitors in elderly patients",
 ];
 
+const HEALTH_RETRY_DELAYS_MS = [5000, 10000, 20000];
+
 export default function HomePage() {
   const [phase, setPhase] = useState("idle");
   const [query, setQuery] = useState("");
@@ -51,12 +53,31 @@ export default function HomePage() {
   const abortRef = useRef(null);
 
   useEffect(() => {
-    let mounted = true;
-    checkHealth()
-      .then((h) => mounted && setHealth(h))
-      .catch(() => mounted && setHealth({ status: "error" }));
+    let cancelled = false;
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const runHealthCheck = async () => {
+      // While HF wakes from sleep, expose an explicit warming state.
+      setHealth({ status: "warming" });
+      for (let attempt = 0; attempt <= HEALTH_RETRY_DELAYS_MS.length; attempt += 1) {
+        try {
+          const h = await checkHealth();
+          if (!cancelled) setHealth(h);
+          return;
+        } catch {
+          if (attempt === HEALTH_RETRY_DELAYS_MS.length) break;
+          if (!cancelled) setHealth({ status: "warming" });
+          await sleep(HEALTH_RETRY_DELAYS_MS[attempt]);
+          if (cancelled) return;
+        }
+      }
+      if (!cancelled) setHealth({ status: "error" });
+    };
+
+    runHealthCheck();
     return () => {
-      mounted = false;
+      cancelled = true;
     };
   }, []);
 
@@ -174,16 +195,26 @@ export default function HomePage() {
               "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ring-1 " +
               (health?.status === "ok"
                 ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                : "bg-slate-100 text-slate-500 ring-slate-200")
+                : health?.status === "warming"
+                  ? "bg-slate-100 text-slate-600 ring-slate-200"
+                  : "bg-rose-50 text-rose-700 ring-rose-200")
             }
           >
             <span
               className={
                 "h-1.5 w-1.5 rounded-full " +
-                (health?.status === "ok" ? "bg-emerald-500" : "bg-slate-400")
+                (health?.status === "ok"
+                  ? "bg-emerald-500"
+                  : health?.status === "warming"
+                    ? "bg-slate-400"
+                    : "bg-rose-500")
               }
             />
-            {health?.status === "ok" ? "Backend online" : "Backend offline"}
+            {health?.status === "ok"
+              ? "Backend online"
+              : health?.status === "warming"
+                ? "Backend warming..."
+                : "Backend offline"}
           </span>
           {synthLabel ? (
             <span className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">
