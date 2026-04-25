@@ -18,20 +18,53 @@ from __future__ import annotations
 
 import sys
 import threading
+import re
 from pathlib import Path
 
 import httpx
-import lancedb
 from sentence_transformers import SentenceTransformer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import settings  # noqa: E402
 from ingestion.chunker import article_to_chunks  # noqa: E402
 from pubmed_client import HTTP_TIMEOUT, fetch_articles, search_pmids  # noqa: E402
+from retrieval.local_search import get_db  # noqa: E402
 
 
 LIVE_TOP_PMIDS = 10
 LIVE_TOP_CHUNKS = 5
+LIVE_SEARCH_STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "of",
+    "for",
+    "in",
+    "on",
+    "with",
+    "and",
+    "or",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "what",
+    "which",
+    "who",
+    "whom",
+    "whose",
+    "when",
+    "where",
+    "why",
+    "how",
+    "best",
+    "first-line",
+    "recommended",
+    "dose",
+}
 
 _model: SentenceTransformer | None = None
 _lock = threading.Lock()
@@ -46,6 +79,18 @@ def _get_model() -> SentenceTransformer:
     return _model
 
 
+def _strip_live_search_stopwords(query: str) -> str:
+    """
+    Build a PubMed-friendly fallback query by dropping filler stopwords.
+    Returns the original query if stripping would leave fewer than 2 terms.
+    """
+    tokens = re.findall(r"[A-Za-z0-9.-]+", query)
+    filtered = [t for t in tokens if t.lower() not in LIVE_SEARCH_STOPWORDS]
+    if len(filtered) < 2:
+        return query.strip()
+    return " ".join(filtered)
+
+
 def live_search(query: str) -> tuple[list[dict], list[dict]]:
     """
     Run a live PubMed search and return:
@@ -58,7 +103,11 @@ def live_search(query: str) -> tuple[list[dict], list[dict]]:
     with httpx.Client(timeout=HTTP_TIMEOUT) as client:
         pmids = search_pmids(client, query, retmax=LIVE_TOP_PMIDS)
         if not pmids:
-            return [], []
+            fallback_query = _strip_live_search_stopwords(query)
+            if fallback_query and fallback_query != query.strip():
+                pmids = search_pmids(client, fallback_query, retmax=LIVE_TOP_PMIDS)
+            if not pmids:
+                return [], []
         articles = fetch_articles(client, pmids)
 
     if not articles:
@@ -158,7 +207,7 @@ def write_articles_to_lancedb(articles: list[dict]) -> int:
             }
         )
 
-    db = lancedb.connect(str(settings.LANCEDB_PATH))
+    db = get_db()
     try:
         table = db.open_table(settings.LANCE_TABLE_NAME)
     except Exception:

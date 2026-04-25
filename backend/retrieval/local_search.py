@@ -20,7 +20,6 @@ from config import settings  # noqa: E402
 
 _model: SentenceTransformer | None = None
 _db = None  # lancedb.DBConnection
-_table = None  # lancedb.Table
 _lock = threading.Lock()
 
 
@@ -33,7 +32,11 @@ def _get_model() -> SentenceTransformer:
     return _model
 
 
-def _get_db():
+def get_db():
+    """Shared LanceDB connection. Reused by live_search write-back so that
+    reads and writes go through the same in-process handle (otherwise the
+    reader's cached snapshot misses freshly written rows — see spec §12
+    'Known minor issue')."""
     global _db
     if _db is None:
         with _lock:
@@ -42,19 +45,19 @@ def _get_db():
     return _db
 
 
-def _get_table():
-    global _table
-    if _table is None:
-        db = _get_db()
-        try:
-            _table = db.open_table(settings.LANCE_TABLE_NAME)
-        except Exception as exc:
-            raise RuntimeError(
-                f"LanceDB table '{settings.LANCE_TABLE_NAME}' not found at "
-                f"{settings.LANCEDB_PATH}. Run `python -m ingestion.embedder` first. "
-                f"(underlying error: {exc})"
-            ) from exc
-    return _table
+def get_table():
+    """Always re-open the table so we observe the latest committed version
+    (LanceDB Table handles are snapshot-pinned; caching them across writes
+    causes the reader to keep returning pre-writeback similarities)."""
+    db = get_db()
+    try:
+        return db.open_table(settings.LANCE_TABLE_NAME)
+    except Exception as exc:
+        raise RuntimeError(
+            f"LanceDB table '{settings.LANCE_TABLE_NAME}' not found at "
+            f"{settings.LANCEDB_PATH}. Run `python -m ingestion.embedder` first. "
+            f"(underlying error: {exc})"
+        ) from exc
 
 
 def embed_query(query: str) -> list[float]:
@@ -80,7 +83,7 @@ def search_local(query: str, top_k: int = 5) -> list[dict]:
     and similarity = 1 - cosine_distance is in [-1, 1] (practically [0, 1]
     for semantically similar text).
     """
-    table = _get_table()
+    table = get_table()
     vec = embed_query(query)
     rows = (
         table.search(vec)
