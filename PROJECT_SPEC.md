@@ -343,7 +343,7 @@ SOURCES:
 1. *"Side effects of SGLT2 inhibitors in elderly patients"* → strong local hit, Tier 1, **Meta-analysis** badge.
 2. *"Does empagliflozin reduce cardiovascular mortality in HFpEF?"* → strong local hit (top sim ≈ 0.82), shows **RCT** + **Review** badges, conf 0.80.
 3. *"First-line treatment for drug-resistant tuberculosis 2024"* → **self-improvement story.** Was a Tier-1 miss originally; after one Day-1 live escalation wrote 21 articles back, it now scores top sim ≈ 0.80 on Tier 1. Demo line: *"Yesterday this missed locally and we used the live fallback. Today it's instant — every doctor's question makes the next doctor's faster."*
-4. *"Best first-line antibiotic for community-acquired pneumonia in adults 2024"* → **live multi-AI showstopper.** Out of corpus (no pulmonology specialty). Triggers `NotFoundScreen` → click *Search live* → 3-stage progress (PubMed → Gemini → Llama) → cited answer + "Added N articles to KB" chip. **DO NOT click this query before the live demo** — the moment you do, write-back will absorb it into Tier 1 and the showstopper is gone. Backup if it gets contaminated: *"Recommended dose of levetiracetam for status epilepticus"* or *"First-line eradication therapy for H. pylori 2024"* (both also out-of-corpus).
+4. *"H. pylori first-line eradication 2024"* → **live multi-AI showstopper.** Out of corpus (no GI specialty). Triggers `NotFoundScreen` → click *Search live* → 3-stage progress (PubMed → Gemini → Llama) → cited answer + "Added N articles to KB" chip. **DO NOT click this query before the live demo** — the moment you do, write-back will absorb it into Tier 1 and the showstopper is gone. Backup if it gets contaminated: *"levetiracetam status epilepticus dose"* (untested, fresh, neurology — also out of corpus). **NOTE:** the previously-recommended phrasing *"Best first-line antibiotic for community-acquired pneumonia in adults 2024"* was dropped on Day 3 PM because PubMed E-utilities ESearch returns **0 PMIDs** for it — the term matcher rejects long natural-language sentences with grammatical filler ("Best ... for ... in adults ... 2024"). Use terse medical phrasing for any live-search query (medical terms + optional year, no full sentences). Validation in PowerShell: `Invoke-RestMethod "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=<URL-encoded-query>&retmode=json"` → `esearchresult.count` must be > 0. Also, the CAP phrasings are now permanently contaminated in the running HF container (the Day-3 PM diagnostic test wrote 20 CAP articles back) — they will Tier-1 hit until the next Space rebuild.
 5. *"Is acetaminophen safe in third trimester pregnancy?"* → top sim ≈ 0.53, lands on `NotFoundScreen` with *"closest match scored 0.53, below the safety threshold. We won't guess."* — **proves the safety story** (§3 rule 4) vs ChatGPT-style hallucination. **Do not escalate this one** at demo time; the abstention itself is the feature.
 
 > **Note on the dropped query:** *"What are the renal dose adjustments for metformin in CKD?"* (former #1) was contaminated by a Day-2 live escalation that wrote 18 articles back — it now Tier-1 hits at conf 0.80 with `Added 18 articles to knowledge base` chip. Still a usable demo if you want a *second* self-improvement story alongside #3, but no longer a clean "abstain on edge case" example.
@@ -452,7 +452,7 @@ SOURCES:
   - TB 2024 → green Tier-1 hit at top sim 0.80 (was 0.44 yesterday — the **self-improvement loop fired**: yesterday's live escalation wrote 21 articles back, today it's instant)
   - acetaminophen 3rd trimester → amber `NotFoundScreen` "closest match scored 0.53, below the safety threshold" ✅ (proves abstention story)
   - metformin/CKD → user clicked "Search live" today; live multi-AI returned amber-badged answer + "Added 18 articles to knowledge base" chip ✅
-- [x] Refreshed §11 hero queries to reflect new reality: TB is now the self-improvement story; **CAP antibiotics 2024** (or H. pylori, levetiracetam) is the new live-search showstopper since it's still out-of-corpus. Spec footnotes the dropped metformin/CKD example.
+- [x] Refreshed §11 hero queries to reflect new reality: TB is now the self-improvement story; **CAP antibiotics 2024** (or H. pylori, levetiracetam) is the new live-search showstopper since it's still out-of-corpus. Spec footnotes the dropped metformin/CKD example. *(Superseded Day 3 PM — the long-form CAP phrasing was found to return 0 PMIDs from PubMed ESearch; live showstopper switched to "H. pylori first-line eradication 2024". See §11 query #4 for the diagnosis.)*
 - [x] Disabled Next.js 16 dev indicator badge (`devIndicators: false` in `next.config.mjs`) — the floating "N" pill in the bottom-left no longer appears.
 - [x] **Pushed all 4 Day-2 commits to `origin/main`**:
   - `5364eab` feat(frontend): scaffold Next.js (JS) + shadcn/ui + lib/api.js
@@ -502,7 +502,7 @@ Zero laptop dependency. Total query latency through the full chain: ~8 s (vs ~3 
 4. **Re-deploy = re-run `.\deploy\hf\sync.ps1 -HfUser Tony0489 -HfSpace MedCite-api -HfToken hf_xxx`.** The script wipes the sibling deploy dir and force-pushes a fresh single-commit history every time — clean and idempotent. New backend code edits or a freshly re-ingested LanceDB get picked up automatically because the script copies from the live `backend/` and `data/lancedb/` trees.
 
 ### Day 3 — Not started (in this exact order)
-- [ ] **3.3 Record 2-minute backup demo video** on the deployed prod URL `https://frontend-sandy-phi-72.vercel.app` (NOT localhost, NOT the trycloudflare URL). Hit all 3 flows: Tier-1 hit (#2 empagliflozin/HFpEF), live escalation showstopper (#4 CAP antibiotics — first click ever), abstention (#5 acetaminophen pregnancy). **DO NOT skip — never demo without insurance.**
+- [ ] **3.3 Record 2-minute backup demo video** on the deployed prod URL `https://abhi04-medcite.vercel.app` (or the original alias `https://frontend-sandy-phi-72.vercel.app` — both point at the same deployment; NOT localhost, NOT the trycloudflare URL). Hit all 3 flows: Tier-1 hit (#1 empagliflozin/HFpEF), self-improvement Tier-1 (#2 TB 2024), live escalation showstopper (#3 *H. pylori first-line eradication 2024* — first click ever; the originally-planned CAP-antibiotics phrasing was dropped on Day 3 PM after diagnosing that PubMed ESearch returns 0 PMIDs for it), abstention (#4 acetaminophen pregnancy). **DO NOT skip — never demo without insurance.**
 - [ ] **3.4 (Optional) Day-3 upgrades** in this order; revert any that don't cleanly win on the 5 hero queries:
   - [ ] A. A/B test `SYNTHESIZER_MODEL=gemini-2.5-pro` (Tier 1 quota now safe). Bump `max_output_tokens` to 8192 in `agents/synthesizer.py`. Keep Flash-Lite as fallback. To deploy: set the env var as a Space Secret on HF + re-run `deploy/hf/sync.ps1` to rebuild the image.
   - [ ] B. Add `infectious_diseases` + `oncology` + `nephrology` specialties; bump `ARTICLES_PER_SPECIALTY` to 7500. Re-run ingestion locally (~30-60 min), then re-sync to HF (the sync script copies the new lance dir). Re-tune `SIMILARITY_THRESHOLD` if distribution shifts. Note: this absorbs the new live-search showstopper into Tier 1, so pick a fresh out-of-corpus query for the demo afterward.
@@ -578,9 +578,12 @@ CURRENT STATE (end of Day-3 morning, all pushed to origin/main):
   5 hero queries verified end-to-end by user with screenshots.
 - §11 hero queries refreshed to reflect current corpus reality:
   TB became a Tier-1 hit overnight via self-improvement (good demo story).
-  Live-search showstopper is now CAP antibiotics 2024 (or H. pylori /
-  levetiracetam as backups) — DO NOT click before stage time or write-back
-  will absorb it.
+  Live-search showstopper is now "H. pylori first-line eradication 2024"
+  (with "levetiracetam status epilepticus dose" as the backup). The original
+  CAP-antibiotics phrasing was dropped on Day 3 PM — PubMed ESearch returns
+  0 PMIDs for long natural-language sentences, silently dead-ending the
+  live pipeline. Use terse medical-term phrasing for any live-search query.
+  DO NOT click before stage time or write-back will absorb it.
 
 DAY-3 DEPLOY DECISION (locked in previous session):
 - Backend: Cloudflare Tunnel from laptop (free, zero cold-start, zero
@@ -608,9 +611,12 @@ TODAY — DAY 3 REMAINING (in this exact order, see §12 "Day 3"):
    the Vercel dashboard. Redeploy. Verify Tier-1 hero query works on
    the prod URL (use empagliflozin/HFpEF — should return conf 0.80).
 3. Record 2-min backup demo video on the prod URL (NOT localhost).
-   Hit all 3 flows: Tier-1 hit (#2 empagliflozin), live escalation
-   showstopper (#4 CAP antibiotics — first click ever), abstention
-   (#5 acetaminophen pregnancy). NEVER skip — this is the insurance.
+   Hit all 4 flows: Tier-1 hit (empagliflozin/HFpEF), self-improvement
+   Tier-1 (drug-resistant TB 2024), live escalation showstopper
+   ("H. pylori first-line eradication 2024" — first click ever; the
+   original CAP antibiotics phrasing was dropped Day 3 PM after PubMed
+   ESearch returned 0 PMIDs for it), abstention (acetaminophen 3rd
+   trimester). NEVER skip — this is the insurance.
 4. ONLY THEN: optional upgrades (§9 Day 3 options A-D):
    A. Try gemini-2.5-pro as synth (Tier 1 quota safe; bump
       max_output_tokens to 8192). Keep only if it wins 4/5 hero

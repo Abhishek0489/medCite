@@ -49,11 +49,14 @@ CURRENT STATE (end of Day-3 afternoon, fully deployed, all pushed to origin/main
     The HF write token `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` was pasted into chat in this session. Rotate it via https://huggingface.co/settings/tokens before going public with anything.
 
 TODAY — DAY 3 STILL REMAINING (fresh chat):
-1. RECORD 2-MINUTE BACKUP DEMO VIDEO on the deployed prod URL (https://frontend-sandy-phi-72.vercel.app — NOT localhost). Hit all 3 flows:
-   - Hero #2 empagliflozin/HFpEF -> Tier-1 hit, RCT/Review badges, conf 0.80
-   - Hero #4 CAP antibiotics 2024 -> live escalation showstopper (3-stage progress -> cited answer + "Added N articles" chip). DO NOT click before recording — first click absorbs it into the cache and ruins the showstopper.
-   - Hero #5 acetaminophen 3rd trimester -> abstention screen ("closest match scored 0.53").
+1. RECORD 2-MINUTE BACKUP DEMO VIDEO on the deployed prod URL (https://abhi04-medcite.vercel.app  OR  the original alias https://frontend-sandy-phi-72.vercel.app — both point at the same deployment; NOT localhost). Hit all 4 flows in this exact order (queries are also pre-populated as the homepage hero chips after the Day-3-PM frontend update — just click them in order):
+   - Hero #1 "Does empagliflozin reduce cardiovascular mortality in HFpEF?" -> Tier-1 hit, RCT/Review badges, conf 0.80, top sim 0.82
+   - Hero #2 "First-line treatment for drug-resistant tuberculosis 2024" -> Tier-1 hit at top sim ~0.80 (was 0.44 on Day 1 — self-improvement story, written back by the live escalation that day)
+   - Hero #3 "H. pylori first-line eradication 2024" -> live escalation showstopper (3-stage progress -> cited answer + "Added N articles" chip). DO NOT click before recording — first click absorbs it into the cache and ruins the showstopper. Backup if contaminated: "levetiracetam status epilepticus dose" (also out-of-corpus, also returns PMIDs in PubMed; verified 2026-04-25 PM).
+   - Hero #4 "Is acetaminophen safe in third trimester pregnancy?" -> abstention screen ("closest match scored 0.53"). Do NOT escalate — the abstention IS the feature.
    This is the insurance. Never demo without it.
+
+   NOTE on the dropped CAP query: the previously-recommended showstopper "Best first-line antibiotic for community-acquired pneumonia in adults 2024" was diagnosed broken on Day 3 PM. PubMed E-utilities ESearch returns 0 PMIDs for it (the term matcher rejects long natural-language sentences with grammatical filler — "Best ... for ... in adults"). The /query/live call silently produces a 0-source not_found in ~4s. Stick to terse medical-term phrasing (drug or condition + topic + optional year) for any live-search query. The Tier-1 queries are unaffected because LanceDB uses semantic embeddings, not PubMed's keyword index. Also: the diagnostic test wrote 20 CAP articles back into the running HF container's cache, so all CAP-antibiotic phrasings will Tier-1 hit until the next Space rebuild — don't accidentally pick one as a backup.
 
 2. OPTIONAL UPGRADES (in order; revert any that don't cleanly win):
    A. SYNTHESIZER_MODEL=gemini-2.5-pro (Tier 1 quota safe). Bump max_output_tokens to 8192 in agents/synthesizer.py. Keep Flash-Lite as fallback. To deploy: re-run .\deploy\hf\sync.ps1 -HfUser Tony0489 -HfSpace MedCite-api -HfToken <new_token>. Set the model env var as a Space Secret before pushing.

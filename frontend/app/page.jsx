@@ -21,12 +21,23 @@ import { queryLocal, queryLive, checkHealth } from "@/lib/api";
 //   notfound  — local status="not_found" (allow live escalation)
 //   abstain   — status="insufficient_evidence" from either tier
 //   error     — network / 5xx
+// Refreshed 2026-04-25 (Day-3 PM, post-deploy):
+//  - Dropped "metformin in CKD" — now Tier-1 hits via Day-2 write-back, no longer
+//    a clean abstention example.
+//  - Dropped the long-form CAP-antibiotics phrasing — PubMed E-utilities ESearch
+//    returns 0 PMIDs for natural-language sentences with grammatical filler
+//    ("Best ... for ... in adults"). Stick to terse medical terms for the live
+//    showstopper or the escalation will silently produce 0 sources.
+//  - "H. pylori first-line eradication 2024" is the new live-multi-AI showstopper:
+//    out of corpus (no GI specialty) → triggers NotFoundScreen, and PubMed
+//    returns 131 PMIDs for the terse phrasing. DO NOT click before stage time —
+//    first click writes the articles back into the cache and ruins the demo.
 const HERO_QUERIES = [
   "Does empagliflozin reduce cardiovascular mortality in HFpEF?",
-  "Side effects of SGLT2 inhibitors in elderly patients",
-  "What are the renal dose adjustments for metformin in CKD?",
   "First-line treatment for drug-resistant tuberculosis 2024",
+  "H. pylori first-line eradication 2024",
   "Is acetaminophen safe in third trimester pregnancy?",
+  "Side effects of SGLT2 inhibitors in elderly patients",
 ];
 
 export default function HomePage() {
