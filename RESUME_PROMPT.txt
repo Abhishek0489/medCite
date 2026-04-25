@@ -1,103 +1,81 @@
 I'm continuing work on "MedCite" — a medical Q&A web app for the Jubilant Pharma hackathon.
 
 STEP 1 — READ FIRST:
-Read PROJECT_SPEC.md at the repo root COMPLETELY before taking any action. Non-negotiables in §3. API shape locked in §6. Component list in §8. Day-3 polish scope in §9 ("Day 3 polish — locked scope") and §12 ("Day 3 — Remaining"). Current state in §12.
-Also read PITCH.md at the repo root — pitch deck reference (do NOT regenerate). Elevator pitch, 7 hard rules, all 5 hero queries with exact demo lines, 2-min demo script, 9 anticipated Q&A.
+1. PITCH.md at the repo root — this is the canonical content source for the deck. Elevator pitch (§1), problem (§2), what we built (§3), the 7 hard rules (§4), architecture diagram (§5), the trust pitch verbatim (§6), the 5 hero queries with exact demo lines (§7), 2-min demo script (§8), 9 anticipated Q&A (§9), the numbers (§10), tech stack (§11), closing line (§13). DO NOT regenerate this — slide content is locked.
+2. PROJECT_SPEC.md — non-negotiables in §3, API shape in §6, hero queries in §11, current state in §12.
 
-CURRENT STATE (end of Day-3 PM polish round, fully deployed, all pushed to origin/main):
-- Last commits on main:
-    bebebb1 feat(frontend): health-check retry with warming state + PWA install layer (manifest, icon, apple meta)
-    e2ca547 fix(backend): live-search PubMed retry without stopwords + share LanceDB connection so write-back surfaces in next local query
-    2c1cf32 docs: lock Day-3 polish scope (live-search resilience + health-check retry + PWA, optional keep-alive); drop Pro/corpus/date-range upgrades; rewrite RESUME_PROMPT.txt for fresh-chat handover at commit da24598
-    da24598 fix(demo): swap CAP-antibiotics live showstopper for H. pylori (PubMed ESearch returns 0 PMIDs for long natural-language phrasings); refresh frontend hero chips and demo docs
-    955c574 docs(spec): log Day-3 afternoon HF Spaces deploy migration
+ONLY REMAINING TASK: BUILD THE PITCH DECK FROM PITCH.md.
 
-- BACKEND IS DEPLOYED ON HUGGING FACE SPACES (Tony0489/MedCite-api):
-    URL:    https://Tony0489-MedCite-api.hf.space
-    Health: GET /health -> 200, gemini-2.5-flash-lite, llama-3.3-70b-versatile, sim 0.55, conf 0.75
-    Smoke:  POST /query/local with empagliflozin/HFpEF returns status=found, conf=0.80, top_sim=0.8205, 5 sources
-    Hardware: CPU Basic (2 vCPU, 16 GB RAM), Docker SDK, port 7860
-    LanceDB cache (53.5 MB, 17,456 chunks) bundled into image via git-lfs.
+The system is fully shipped, deployed, verified, and the 2-minute backup demo video is recorded. Nothing left to code. Just build slides.
 
-- FRONTEND IS DEPLOYED ON VERCEL (project name "frontend"):
-    Primary URL: https://abhi04-medcite.vercel.app   (vanity alias added Day 3 PM, project domain assigned to Production env)
-    Original alias: https://frontend-sandy-phi-72.vercel.app   (still works, same deployment)
-    NEXT_PUBLIC_API_URL env var = https://Tony0489-MedCite-api.hf.space (set in Vercel dashboard, baked into the bundle).
-    Verified end-to-end: prod-equivalent POST through this URL chain returns conf=0.80, top_sim=0.8205, 5 sources.
+Suggested slide structure (10 slides, follows PITCH.md flow + 2-min demo script):
+  1. Title  — "MedCite — clinical Q&A that never hallucinates"
+  2. Problem  — PITCH.md §2
+  3. What we built (with screenshot of the answered query)  — PITCH.md §3
+  4. The trust pitch (4 sentences verbatim)  — PITCH.md §6
+  5. The 7 hard rules  — PITCH.md §4
+  6. Architecture diagram (the two-tier flow)  — PITCH.md §5
+  7. Live demo placeholder slide (you'll switch to the browser here, hero queries 1-4)  — PITCH.md §7 + §8
+  8. The numbers  — PITCH.md §10
+  9. Q&A teaser (top 3 anticipated questions)  — PITCH.md §9
+  10. Closing  — PITCH.md §13
 
-- DEMO QUERY FIX SHIPPED EARLIER (Day 3 PM, 2026-04-25, commit da24598):
-    Diagnosed in demo prep: the previously-recommended live-multi-AI showstopper *"Best first-line antibiotic for community-acquired pneumonia in adults 2024"* returns 0 PMIDs from PubMed E-utilities ESearch (term matcher rejects long natural-language phrasings).
-    Fix: replaced with "H. pylori first-line eradication 2024" — out-of-corpus (no GI specialty), 131 PMIDs in PubMed, full live pipeline verified end-to-end on prod (status=found, conf=0.80, top_sim=0.6283, 5 cited sources, 26 articles written back to LanceDB during latest verification).
-    Frontend HERO_QUERIES list in app/page.jsx reordered to match recording order (empagliflozin -> TB -> H. pylori -> acetaminophen -> SGLT2).
+Format choice: ask the user which they want — PowerPoint (.pptx via python-pptx), Google Slides (markdown they paste in), or marp/reveal.js markdown deck. Don't assume.
 
-- POLISH ROUND SHIPPED THIS SESSION (Day 3 PM, 2026-04-25, commits e2ca547 + bebebb1):
-    A. **Live-search resilience (e2ca547, backend/retrieval/live_search.py).** If PubMed ESearch returns 0 PMIDs, retry once with the locked stopword list stripped (the/a/an/of/for/in/on/with/and/or/is/are/was/were/be/been/being/what/which/who/whom/whose/when/where/why/how/best/first-line/recommended/dose). If retry still empty, return [] honestly so existing not_found UI fires. Spec §3 rules unaffected — pure query-string transform.
-    B. **LanceDB write-back surfacing fix (e2ca547, backend/retrieval/{local,live}_search.py).** Spec §12 known issue is now fixed: previously, after /query/live wrote N articles back, the immediate /query/local for the same query still saw the pre-writeback similarity (e.g. 0.4507 for H. pylori despite 26 rows just added). Root cause was a module-level _table cache in local_search holding a snapshot reference; live_search's write_articles_to_lancedb opened a separate DB connection. Fix: drop the _table cache (re-open table on every search; cheap metadata read) AND have the writer use the same shared db connection as the reader. Verified end-to-end on prod: LOCAL_BEFORE=not_found@0.4507 -> LIVE writes 26 -> LOCAL_AFTER=found@0.6283. The "Added N articles to KB" chip is now actually true in real time.
-    C. **Frontend health-check retry (bebebb1, frontend/app/page.jsx).** useEffect that calls checkHealth() now retries the initial call + 3 backoff retries (5s/10s/20s) before flipping the pill to red. Adds a slate "Backend warming…" intermediate state for honesty during HF cold starts. UI-only.
-    D. **PWA install layer (bebebb1, frontend/public/{icon.svg,manifest.json} + frontend/app/layout.jsx).** No service worker. Sky-600 rounded square + white stethoscope icon (512x512, 25% inner padding for Android maskable safe zone). Manifest: standalone display, theme #0284c7, background #f8fafc. layout.jsx metadata.{manifest, icons.icon, icons.apple, appleWebApp} populated. Verified curl /manifest.json returns valid JSON in prod.
-    Optional keep-alive (HF Space /health monitor) — NOT shipped; no code anyway. Skip if you can keep /health warm manually during the 24h pre-demo window (sleep window is 48h).
+Screenshots needed for slides 3 + 7: prod URL is https://abhi04-medcite.vercel.app — open hero #2 (empagliflozin) for the "answered query" hero shot, and the abstention screen on hero #5 (acetaminophen) for the "honest abstention" demonstration.
 
-    Backend redeployed to HF twice this session (sync.ps1 to Tony0489/MedCite-api). Frontend redeployed to Vercel once. H. pylori live-multi-AI showstopper has been re-verified fresh after the second backend redeploy: VERIFY_FRESH status=not_found, top_sim=0.4507. SAFE TO RECORD. Do NOT click hero #4 H. pylori before recording — first click writes 26 articles back to the live container's writable fs and the showstopper animation is gone for that container's lifetime (until next sync.ps1).
+CURRENT STATE OF THE DEPLOYED SYSTEM (no action needed; fully working):
+- Backend: https://Tony0489-MedCite-api.hf.space (HF Spaces, Docker, free tier, 16 GB RAM, port 7860). LanceDB (53.5 MB, 17,456 chunks) bundled into the image. Self-improvement write-back fix shipped this session — "Added N articles to KB" chip is now actually true in real time.
+- Frontend: https://abhi04-medcite.vercel.app (Vercel, Next.js 16, Tailwind 4). Health-check now retries 3× with 5s/10s/20s backoff and shows "Backend warming…" intermediate state during HF cold starts. PWA install layer shipped (manifest + icon + apple meta) — judges can install to home screen.
+- Last commit on main: 96765df. Recent commits:
+    96765df docs: log Day-3 PM polish round shipped
+    bebebb1 feat(frontend): health-check retry with warming state + PWA install layer
+    e2ca547 fix(backend): live-search PubMed retry without stopwords + share LanceDB connection so write-back surfaces
+    2c1cf32 docs: lock Day-3 polish scope
+    da24598 fix(demo): swap CAP-antibiotics live showstopper for H. pylori
+- Repo: https://github.com/Abhishek0489/medCite.git on branch main. All work pushed.
 
-- HARD CAVEATS WITH HF SPACES FREE TIER:
-    1. Auto-sleeps after 48 h of no traffic. First request after sleep takes ~12 s cold-start. Frontend now shows "Backend warming…" pill during the wake-up retries (item C above) so the UX is honest.
-    2. CPU is shared pool. Sentence-transformers encode is ~5-8 s vs ~1 s on laptop. Hero query total latency: ~8 s through HF vs ~3 s direct on laptop. Still under "feels fast" threshold.
-    3. Self-improvement write-back persists in container's writable fs only. If the container restarts (Space rebuild, HF maintenance), all live-search-absorbed articles since the last image build are lost. The bundled image already contains the original 21 TB articles + 18 metformin/CKD articles, so the TB self-improvement story survives restarts.
-    4. After this session's redeploys, the running container has ONLY the bundled-image articles. H. pylori is fresh (verified). CAP-antibiotic phrasings are also wiped from earlier-session writebacks since the image was rebuilt.
+CRITICAL PRE-DEMO STEP (do this 5 min before judges arrive, NOT before the deck build):
+The recording session clicked hero #4 H. pylori, which wrote 26 articles back into the live container's writable fs. That query is now a Tier-1 hit on the running HF container — the live-multi-AI showstopper animation is gone for the live judge demo unless you reset.
 
-- SECURITY DEBT (already addressed mid-session):
-    Earlier HF write tokens (`hf_uzcN…BLC`, `hf_KiRS…hmN`) were pasted into chat. User rotated them to `hf_cdew…TPrs` mid-session. Rotate again before going public if any of these last three were ever used outside this chat. https://huggingface.co/settings/tokens
+Reset command (~90s): `.\deploy\hf\sync.ps1 -HfUser Tony0489 -HfSpace MedCite-api -HfToken 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`
 
-TODAY — DAY 3 STILL REMAINING (in this exact order; locked scope, no scope-creep):
+After the redeploy, verify with: `Invoke-RestMethod -Uri "https://Tony0489-MedCite-api.hf.space/health"` → status=ok, then POST to /query/local with H. pylori body → expect status=not_found, top_sim=0.4507. That's the fresh untouched state.
 
-1. RECORD 2-MINUTE BACKUP DEMO VIDEO on the deployed prod URL (https://abhi04-medcite.vercel.app  — NOT localhost). Hit all 4 flows in this exact order; the homepage hero chips are pre-populated in this order, just click them:
-   - Hero #1 "Does empagliflozin reduce cardiovascular mortality in HFpEF?" -> Tier-1 hit, RCT/Review badges, conf 0.80, top sim 0.82
-   - Hero #2 "First-line treatment for drug-resistant tuberculosis 2024" -> Tier-1 hit at top sim ~0.80 (was 0.44 on Day 1 — self-improvement story)
-   - Hero #3 "H. pylori first-line eradication 2024" -> live escalation showstopper (3-stage progress -> cited answer + "Added 26 articles" chip). DO NOT click before recording — first click absorbs it into the cache. With the e2ca547 fix, re-asking the same query after the live click WILL Tier-1 hit (top_sim ~0.63) — that's a legitimate "system actually learned" follow-up if the demo time allows. Backup if contaminated: "levetiracetam status epilepticus dose".
-   - Hero #4 "Is acetaminophen safe in third trimester pregnancy?" -> abstention screen ("closest match scored 0.45"). Do NOT escalate — the abstention IS the feature.
-   This is the insurance. Never demo without it.
+The TB self-improvement story is unaffected by container restarts — those 21 TB articles are baked into the bundled image.
 
-2. POLISH — DONE THIS SESSION. All 3 locked-scope items + the LanceDB write-back fix shipped (commits e2ca547 + bebebb1, both pushed). See "POLISH ROUND SHIPPED THIS SESSION" block above for the full audit. Optional D (HF /health keep-alive monitor) deliberately not shipped — manageable manually during the 24h pre-demo window since the sleep window is 48h. If you decide to add it, UptimeRobot free monitor on https://Tony0489-MedCite-api.hf.space/health at 5-min interval is ~5 min of clicking, no code.
-
-   OUT OF SCOPE, deliberately dropped to control complexity (do NOT pursue without removing the spec §9 "Out of scope" section first):
-     - Synthesizer model swap to gemini-2.5-pro
-     - Corpus expansion (add infectious_diseases / oncology / nephrology + bump ARTICLES_PER_SPECIALTY 5000 -> 7500)
-     - Widening date range 2015 -> 2010 in SPECIALTIES queries
-   All three require re-ingestion (30-60 min) + HF re-deploy + threshold re-tuning, and one of them would absorb the H. pylori showstopper into Tier 1. See spec §9 "Out of scope" for full rationale.
-
-3. PITCH + Q&A PREP. Read PITCH.md cover to cover, build slides from it, rehearse the 4-sentence trust pitch and the 9 Q&A answers.
+THE 5 HERO QUERIES (memorize order; chips on homepage are pre-populated in this order):
+1. "Does empagliflozin reduce cardiovascular mortality in HFpEF?" → Tier-1, conf 0.80, top_sim 0.82, RCT/Review badges
+2. "First-line treatment for drug-resistant tuberculosis 2024" → Tier-1, top_sim ~0.80 (was 0.44 on Day 1 — self-improvement story)
+3. "H. pylori first-line eradication 2024" → live-multi-AI showstopper. After live click: "Added 26 articles" chip; re-asking shows Tier-1 hit at top_sim 0.6283 (legitimate "system actually learned" follow-up if demo time allows)
+4. "Is acetaminophen safe in third trimester pregnancy?" → abstention screen ("closest match scored 0.45"). Do NOT escalate — the abstention IS the feature
+5. "Side effects of SGLT2 inhibitors in elderly patients" → Tier-1, Meta-analysis badge (backup if any of #1-4 misbehaves)
 
 HARD RULES (from §3, do not violate):
 1. LLMs never write URLs — backend stitches them from PMIDs in metadata
 2. Synthesizer prompt forbids prior knowledge; chunks-only or INSUFFICIENT_EVIDENCE
 3. Verifier must be a different vendor (Google synth + Meta/Llama verify)
-4. Confidence < 0.75 -> abstain
+4. Confidence < 0.75 → abstain
 5. Live search only runs when user clicks button (never automatic)
 6. Every source card shows quoted passage + clickable PubMed + DOI URL
 7. UI is a clinical tool (one question, one answer card) — NOT a chatbot
 
+THE 4-SENTENCE TRUST PITCH (PITCH.md §6, memorize verbatim):
+"Every other AI tool starts with the LLM and asks it to remember sources. We start with PubMed and ask the LLM to summarize what's actually there. The LLM is never allowed to invent a citation, never allowed to answer from memory, and a second model from a different company verifies every claim before the doctor ever sees it. If it can't reach 75% confidence — it says so. That's the difference between a chatbot and a clinical tool."
+
+ENV: Windows + PowerShell + Python 3.12 venv at backend/.venv/. Node 22 LTS. Backend can still be run locally for screenshots if needed (.venv\Scripts\Activate.ps1; uvicorn main:app --port 8000) but not required — the prod URL works for everything.
+
+POWERSHELL GOTCHAS:
+- `curl` is aliased to Invoke-WebRequest. Use `curl.exe` or `Invoke-RestMethod` for JSON
+- `&&` is not a valid statement separator; use `;` instead
+- Heredoc (`cat <<'EOF' ... EOF`) doesn't work; for long commit messages keep them short or write to .git/COMMIT_MSG_TMP first then `git commit -F`
+
 WORKFLOW:
-- Commit after each logical piece. Conventional commit messages. Keep the body short — the user asked for brief commit messages this session.
+- Commit after each logical piece. Brief conventional commit messages (user prefers short).
 - Never commit .env or frontend/.env.local (both gitignored).
-- The deploy/hf/ sibling dir lives at ..\medcite-hf-space\ (outside the repo) so the 53 MB lancedb cache never lands in GitHub. Re-run .\deploy\hf\sync.ps1 to redeploy backend.
-- Repo: https://github.com/Abhishek0489/medCite.git on branch main. Last commit pushed: bebebb1.
+- Don't pursue the optional HF Space keep-alive (UptimeRobot monitor) — user explicitly opted out.
+- Don't pursue corpus expansion / Pro model swap / date-range widening (out of scope, would absorb the H. pylori showstopper into Tier 1).
 
-ENV: Windows + PowerShell + Python 3.12 venv at backend/.venv/. Node 22 LTS. Backend can still be run locally (.venv\Scripts\Activate.ps1; uvicorn main:app --port 8000) but PROD requests don't touch it anymore. .env at repo root has all keys (GOOGLE, GROQ, NCBI). frontend/.env.local has NEXT_PUBLIC_API_URL=http://localhost:8000 for local dev (never override; only Vercel dashboard is set to the HF URL).
+SECURITY NOTE: HF write token `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` was pasted into chat — rotate via https://huggingface.co/settings/tokens once the hackathon is over.
 
-POWERSHELL GOTCHAS (learned this session):
-- `curl` is aliased to Invoke-WebRequest. Use `curl.exe` for actual curl, OR use `Invoke-RestMethod` for JSON (handles ConvertTo-Json on the body cleanly: `Invoke-RestMethod -Uri ... -Method POST -ContentType 'application/json' -Body (@{query='...'} | ConvertTo-Json)`).
-- `&&` is not a valid statement separator; use `;` instead.
-- Heredoc (`cat <<'EOF' ... EOF`) doesn't work; for long commit messages either keep them short or write to .git/COMMIT_MSG_TMP first then `git commit -F`.
-
-DEV SERVERS LOCAL (verify with terminals folder before assuming):
-  Backend on http://localhost:8000 (uvicorn --reload)
-  Frontend on http://localhost:3000 (next dev)
-  Cloudflare Quick Tunnel may still be running in background as a fallback (no longer in the prod path)
-
-If anything in the deploy stack breaks during demo day:
-  - HF Space down? `Settings -> Factory rebuild` on the Space page (WARNING: wipes any live-absorbed articles since the last image build), or re-run deploy/hf/sync.ps1 with the latest token.
-  - H. pylori showstopper accidentally pre-clicked? Re-run deploy/hf/sync.ps1 (~90s build) — wipes writeback fs, restores fresh out-of-corpus state.
-  - Vercel bundle stale? `cd frontend && npx vercel --prod --yes`.
-  - As last resort: Vercel env back to a fresh trycloudflare URL + cloudflared running on the laptop.
-
-Continue from where Day-3 PM left off. Reference PROJECT_SPEC.md and PITCH.md.
+Continue with: build the pitch deck from PITCH.md. Ask the user about format (PPTX / Google Slides markdown / marp / reveal.js) before generating slides.
