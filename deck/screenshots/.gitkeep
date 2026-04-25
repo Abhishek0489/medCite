@@ -1,0 +1,4 @@
+# Drop slide screenshots here, then re-run `python deck\build_deck.py`.
+# Expected filenames (referenced by build_deck.py placeholder logic):
+#   hero2-empagliflozin.png         — slide 3 ("answered query" hero shot)
+#   hero5-acetaminophen-abstain.png — slide 7 ("honest abstention" demo)
