@@ -263,12 +263,38 @@ Then upgrade. Never touch a working system twice in the same day.
   foundational reviews without exploding corpus size.
 - Edit the `2015` in `SPECIALTIES` queries in `config.py`.
 
+**D. PWA install layer (45-60 min, very low risk — purely additive)**
+- Goal: judges can "Install" the deployed website from Chrome/Safari and it
+  lands on the home screen with the stethoscope icon, opens fullscreen, no
+  browser chrome. Same code path as the website — no native rewrite, no
+  React Native, no Capacitor.
+- Hard prerequisite: backend must be deployed publicly (HTTPS) first.
+  Localhost cannot be installed as a PWA from someone else's device.
+- Do NOT add a service worker. Manifest + icons + iOS meta tags only.
+  Service workers are where PWA bugs live (stale caches, wedged installs);
+  modern browsers will still show the "Install" affordance without one.
+- Files to create:
+  - `frontend/public/icon.svg` — sky-600 rounded square + white Lucide
+    stethoscope path, 512×512 viewBox with 25% inner padding (safe zone
+    for Android maskable icons).
+  - `frontend/public/manifest.json` — `name`, `short_name: "MedCite"`,
+    `start_url: "/"`, `display: "standalone"`, `background_color: "#f8fafc"`,
+    `theme_color: "#0284c7"`, icons referencing `/icon.svg` with `sizes: "any"`.
+  - `frontend/app/layout.jsx` — add `metadata.manifest = "/manifest.json"`,
+    `metadata.icons.icon` and `apple`, plus `metadata.appleWebApp` block.
+- Test: `curl http://localhost:3000/manifest.json` returns JSON, then on
+  the deployed URL open Chrome → 3-dots menu → "Install MedCite" should
+  appear. iOS Safari → Share → Add to Home Screen.
+- Sequence: do this AFTER deploy + backup demo. Skip entirely if anything
+  in deploy goes sideways — the website demo is already enough.
+
 **Recommended Day 3 timeline:**
 1. Morning — polish UI, deploy frontend + backend, record backup demo on
-   the currently-working corpus.
+   the currently-working corpus (deployed prod URL, not localhost).
 2. Afternoon — model A/B test (option A), then corpus upgrade (option B)
    and re-tune threshold if needed. Re-run hero smoke test. Push.
-3. Live demo runs on upgraded system; backup video is the safety net.
+3. Late afternoon (optional) — PWA layer (option D). 45 min, additive.
+4. Live demo runs on upgraded system; backup video is the safety net.
 
 ## 10. The Strict Prompts (use verbatim)
 
@@ -419,45 +445,126 @@ SOURCES:
 - [x] Dev server (`npm run dev`) up on http://localhost:3000, GET / returns 200 with no compile errors. No ESLint errors on any new file.
 - [x] Smoke-tested backend from PowerShell: empagliflozin/HFpEF query returns `status=found`, `confidence=0.80`, 5 sources with full quoted_passages and PubMed+DOI URLs.
 
-### Not started
-- [ ] Manual end-to-end click-through of the 3 flows in a real browser (open http://localhost:3000 — backend at :8000 is already running). The five hero questions from §11 are wired as one-click buttons in the idle state.
-- [ ] **Day 3:** Deploy (Vercel + Railway) + demo prep
-- [ ] **Day 3 optional upgrades (see §9 Day 3 → "optional upgrades"):**
-  - [ ] A/B test `gemini-2.5-pro` as synthesizer (user has Pro access)
-  - [ ] Add Infectious Diseases + Oncology + Nephrology specialties; bump `ARTICLES_PER_SPECIALTY` to 7500
-  - [ ] Re-tune `SIMILARITY_THRESHOLD` after re-ingestion if distribution shifts
-- [ ] **Minor polish:** live write-back wrote 21 articles but the immediate follow-up local query still returned `top_sim=0.4439` (pre-writeback value). Either in-process LanceDB table handle caching stale state, or PubMed-fetch query string ≠ embedded query. Non-blocking.
+### Day 2 closed (end-of-session, 2026-04-25 evening)
+- [x] Manual click-through of all 5 hero queries in browser — verified by user with screenshots:
+  - SGLT2 elderly → green Tier-1 hit, conf 0.80, **Meta-analysis** badge ✅
+  - empagliflozin/HFpEF → green Tier-1 hit, conf 0.80, top sim 0.82, **RCT/Review** badges ✅
+  - TB 2024 → green Tier-1 hit at top sim 0.80 (was 0.44 yesterday — the **self-improvement loop fired**: yesterday's live escalation wrote 21 articles back, today it's instant)
+  - acetaminophen 3rd trimester → amber `NotFoundScreen` "closest match scored 0.53, below the safety threshold" ✅ (proves abstention story)
+  - metformin/CKD → user clicked "Search live" today; live multi-AI returned amber-badged answer + "Added 18 articles to knowledge base" chip ✅
+- [x] Refreshed §11 hero queries to reflect new reality: TB is now the self-improvement story; **CAP antibiotics 2024** (or H. pylori, levetiracetam) is the new live-search showstopper since it's still out-of-corpus. Spec footnotes the dropped metformin/CKD example.
+- [x] Disabled Next.js 16 dev indicator badge (`devIndicators: false` in `next.config.mjs`) — the floating "N" pill in the bottom-left no longer appears.
+- [x] **Pushed all 4 Day-2 commits to `origin/main`**:
+  - `5364eab` feat(frontend): scaffold Next.js (JS) + shadcn/ui + lib/api.js
+  - `f5e3bbd` feat(frontend): build components and main query page (Flows A/B/C)
+  - `0a1e882` docs: log Day 2 frontend progress
+  - `68b8df1` chore: refresh hero queries (§11) and disable Next.js dev indicator badge
+- [x] **Quota check for demo safety:**
+  - Google AI Studio is now on **Tier 1** (billing enabled). Flash-Lite limits jumped from 10 RPM / 20 RPD → **4,000 RPM / unlimited RPD**. Pro is now viable for Day-3 A/B test (150 RPM / 1,000 RPD). Worst-case full-hackathon spend: under $2.
+  - Groq dashboard verified: `llama-3.3-70b-versatile` at 30 RPM / **1K RPD / 12K TPM / 100K TPD** (slightly tighter than the README quoted previously). 1 verifier call ≈ 2K tokens → ~50 calls/day before TPD throttle. Plenty for the demo. Real spend so far: $0.01 projected (free tier, no card).
+
+### Day 3 — Not started (in this exact order)
+- [ ] **3.1 Deploy backend** to Render or Railway with persistent volume for `data/lancedb/`. Get HTTPS URL. Verify `/health` from public internet.
+- [ ] **3.2 Deploy frontend** to Vercel; set `NEXT_PUBLIC_API_URL` env var to the deployed backend URL. Verify Tier-1 hero query end-to-end on the prod URL.
+- [ ] **3.3 Record 2-minute backup demo video** on the deployed system (NOT localhost). Hit all 3 flows: Tier-1 hit, live escalation showstopper, abstention. **DO NOT skip — never demo without insurance.**
+- [ ] **3.4 (Optional) Day-3 upgrades** in this order; revert any that don't cleanly win on the 5 hero queries:
+  - [ ] A. A/B test `SYNTHESIZER_MODEL=gemini-2.5-pro` (Tier 1 quota now safe). Bump `max_output_tokens` to 8192 in `agents/synthesizer.py`. Keep Flash-Lite as fallback.
+  - [ ] B. Add `infectious_diseases` + `oncology` + `nephrology` specialties; bump `ARTICLES_PER_SPECIALTY` to 7500. Re-run ingestion (~30-60 min). Re-tune `SIMILARITY_THRESHOLD` if distribution shifts. Note: this absorbs the new live-search showstopper into Tier 1, so pick a fresh out-of-corpus query for the demo afterward.
+  - [ ] C. Widen `2015` → `2010` in `SPECIALTIES` queries in `config.py` (cheapest win, more foundational reviews).
+  - [ ] D. **PWA install layer** (see §9 Day 3 option D). 45 min, additive, no native rewrite. Lets judges install the website as an app on their phone home screen. Hard prereq: backend deployed (3.1).
+- [ ] **3.5 Pitch + Q&A prep.** 1-page pitch script. Rehearse the 4-sentence trust pitch ("ChatGPT starts with the LLM and asks it to remember sources. We start with PubMed and ask the LLM to summarise…").
+
+### Known minor issue (non-blocking)
+- After live write-back to LanceDB, the in-process table handle sometimes returns the pre-writeback similarity (e.g. write-back added 21 TB articles, immediate follow-up local query still returned top_sim 0.4439). Hot-reloading the backend or waiting a few seconds clears it. Either an in-process LanceDB cache or the PubMed-fetch query string isn't byte-equal to the embedded query. Worth investigating on Day 3 morning if time allows; not on the critical path.
 
 ### Key env vars user has set (already in `.env`)
-- `GOOGLE_API_KEY` (Gemini)
-- `GROQ_API_KEY`
-- `NCBI_API_KEY` + `NCBI_EMAIL`
+- `GOOGLE_API_KEY` (Gemini, Tier 1 billing enabled)
+- `GROQ_API_KEY` (free tier)
+- `NCBI_API_KEY` + `NCBI_EMAIL` (free)
+- `NEXT_PUBLIC_API_URL=http://localhost:8000` (in `frontend/.env.local`; will need to point at deployed backend URL on Day 3)
 
 ---
 
 ## Resume Prompt (paste this if Cursor context fills up)
 
 ```
-I am building "MedCite" — a medical Q&A web app for the Jubilant Pharma hackathon.
+I'm continuing work on "MedCite" — a medical Q&A web app for the Jubilant
+Pharma hackathon.
 
-READ FIRST: The full spec is in PROJECT_SPEC.md at the repo root. Read that file completely before doing anything else. Do not deviate from the design principles in section 3.
+STEP 1 — READ FIRST:
+Read PROJECT_SPEC.md at the repo root COMPLETELY before taking any action.
+Non-negotiables in §3. API shape locked in §6. Component list in §8.
+Day 3 step list in §9 + §12 "Day 3 — Not started". Current state in §12.
 
-ONE-LINE SUMMARY: Doctor types a medical question → system searches a local LanceDB of ~10,000 pre-embedded PubMed abstracts (Diabetes + Cardiology) → if good match (similarity >= 0.80), Gemini 2.0 Flash synthesizes a cited answer and Groq Llama 3.3 70B verifies it → if no local match, doctor clicks a button to trigger live PubMed API + same multi-LLM pipeline → every answer has clickable PubMed URLs built from PMIDs (never generated by LLM) → confidence < 0.75 means abstain with "No reliable answer found".
+CURRENT STATE (end of Day 2, frontend done, all pushed to origin/main):
+- Backend on :8000 healthy, 17,456 LanceDB chunks (Diabetes + Cardiology +
+  ~21 TB articles + ~18 metformin/CKD articles auto-absorbed via the live
+  multi-AI write-back loop on Day 1-2).
+- Synthesizer: gemini-2.5-flash-lite (primary) + gemini-2.5-flash (fallback).
+  Google AI Studio is on Tier 1 (billing enabled), so quota is no longer a
+  concern — Pro is now safely viable for the Day-3 A/B test.
+- Verifier: llama-3.3-70b-versatile via Groq (free tier, 100K TPD ≈ ~50
+  verifier calls/day; plenty for the demo).
+- Frontend: Next.js 16 + React 19 + Tailwind 4 + shadcn/ui in JS mode.
+  Note: `create-next-app@latest` shipped Next 16 not the originally-specced
+  Next 14 — no breaking impact on §3 rules. Six components per §8 all built
+  as .jsx. State machine in app/page.jsx covers all flows. Dev indicator
+  badge disabled in next.config.mjs. All 5 hero queries verified end-to-end
+  by user with screenshots. Last commit on main: 68b8df1.
+- §11 hero queries refreshed to reflect current corpus reality:
+  TB became a Tier-1 hit overnight via self-improvement (good demo story).
+  Live-search showstopper is now CAP antibiotics 2024 (or H. pylori /
+  levetiracetam as backups) — DO NOT click before stage time or write-back
+  will absorb it.
 
-TECH: Next.js 14 (App Router) + JavaScript (.jsx, NOT TypeScript) + Tailwind + shadcn/ui frontend; FastAPI + LanceDB + sentence-transformers backend; Google Gemini 2.5 Flash-Lite as synthesizer (Pro is a Day 3 optional upgrade); Groq Llama 3.3 70B as verifier; PubMed E-utilities for article source.
+TODAY — DAY 3: DEPLOY + DEMO PREP (in this exact order, see §12 "Day 3"):
+1. Deploy backend to Render or Railway with persistent volume for
+   data/lancedb/. Get HTTPS URL. Verify /health from public internet.
+2. Deploy frontend to Vercel; set NEXT_PUBLIC_API_URL env var to the
+   deployed backend URL. Verify Tier-1 hero query works on prod URL.
+3. Record 2-min backup demo video on the deployed system (NOT localhost).
+   Hit all 3 flows: Tier-1 hit / live escalation / abstention. NEVER skip.
+4. ONLY THEN: optional upgrades (§9 Day 3 options A-D, §12 step 3.4):
+   A. Try gemini-2.5-pro as synth (Tier 1 quota safe; bump max_output_tokens
+      to 8192). Keep only if it wins 4/5 hero queries cleanly.
+   B. Add infectious_diseases / oncology / nephrology specialties; bump
+      ARTICLES_PER_SPECIALTY to 7500. Re-run ingestion (~30-60 min).
+      Re-tune SIMILARITY_THRESHOLD if distribution shifts.
+   C. Widen 2015 → 2010 in SPECIALTIES queries (cheapest win).
+   D. PWA install layer (45 min, additive, no service worker — see §9
+      Day 3 option D for exact files to create). Lets judges install the
+      site as an app on their phone. Hard prereq: backend deployed (step 1).
+5. Pitch + Q&A prep. 1-page script. Rehearse the trust pitch:
+   "ChatGPT starts with the LLM and asks it to remember sources. We start
+   with PubMed and ask the LLM to summarise what's actually there."
 
-HARD RULES (do not violate):
-1. LLMs never write URLs — only [1][2] citation numbers; backend stitches URLs from metadata
-2. Synthesizer prompt forbids using prior knowledge; must answer from chunks only or say INSUFFICIENT_EVIDENCE
-3. Verifier must be a different vendor model from Synthesizer
+HARD RULES (from §3, do not violate):
+1. LLMs never write URLs — backend stitches them from PMIDs in metadata
+2. Synthesizer prompt forbids prior knowledge; chunks-only or
+   INSUFFICIENT_EVIDENCE
+3. Verifier must be a different vendor (Google synth + Meta/Llama verify)
 4. Confidence < 0.75 → abstain
-5. Live search only runs when user clicks button (not automatic)
-6. Every source card shows quoted passage + clickable PubMed URL + DOI URL
+5. Live search only runs when user clicks button (never automatic)
+6. Every source card shows quoted passage + clickable PubMed + DOI URL
 7. UI is a clinical tool (one question, one answer card) — NOT a chatbot
 
-CURRENT STATE: [update this line yourself — e.g., "Day 1 complete, curl tests passing. Starting Day 2 UI now."]
+WORKFLOW:
+- Commit after each logical piece (deploy step, env var change, model swap,
+  ingestion run, etc). Conventional commit messages.
+- Never commit .env or frontend/.env.local (both gitignored at repo root).
+- Repo: https://github.com/Abhishek0489/medCite.git on branch main.
+  Last commit pushed: 68b8df1.
 
-NEXT STEP: [what you were about to do]
+ENV: Windows + Git Bash + Python 3.12 venv at backend/.venv/. Node 22 LTS.
+NCBI_API_KEY, GOOGLE_API_KEY (Tier 1 billing), GROQ_API_KEY all in .env.
+Frontend env at frontend/.env.local has NEXT_PUBLIC_API_URL=http://localhost:8000
+— this needs to flip to the deployed backend URL on Vercel.
+
+START THE TWO DEV SERVERS LOCALLY FIRST so you can sanity-check before deploy:
+  Terminal 1: cd backend && source .venv/Scripts/activate &&
+              uvicorn main:app --reload --port 8000
+  Terminal 2: cd frontend && npm run dev
+Then move on to step 1 (Render/Railway deploy).
 
 Continue from where the previous session left off. Reference PROJECT_SPEC.md for anything you're unsure about.
 ```
