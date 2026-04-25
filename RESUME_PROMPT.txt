@@ -1,0 +1,93 @@
+I'm continuing work on "MedCite" — a medical Q&A web app for the Jubilant Pharma hackathon.
+
+STEP 1 — READ FIRST:
+Read PROJECT_SPEC.md at the repo root COMPLETELY before taking any action. Non-negotiables in §3. API shape locked in §6. Component list in §8. Day-3 step list in §9 + §12. Current state in §12.
+Also read PITCH.md at the repo root — pitch deck reference (do NOT regenerate). Elevator pitch, 7 hard rules, all 5 hero queries with exact demo lines, 2-min demo script, 9 anticipated Q&A.
+
+CURRENT STATE (end of Day-3 afternoon, fully deployed, all pushed to origin/main):
+- Last commit on main: d4cf4d9 (deploy artifacts). Recent commits:
+    d4cf4d9 feat(deploy): add HF Spaces Dockerfile + sync script for backend deploy
+    f17014b chore(frontend): gitignore .vercel/ (added by vercel link)
+    284e10c chore: log Day-3 morning state (cloudflared+vercel deploy plan)
+    392a975 docs: add PITCH.md
+    563d6a2 fix(backend): UTF-8 stdio + disable tqdm + log tracebacks for cloud deploy
+
+- BACKEND IS DEPLOYED ON HUGGING FACE SPACES (not Cloudflare Tunnel anymore — see "DEPLOY MIGRATION" below):
+    URL:    https://Tony0489-MedCite-api.hf.space
+    Health: GET /health -> 200, gemini-2.5-flash-lite, llama-3.3-70b-versatile, sim 0.55, conf 0.75
+    Smoke:  POST /query/local with empagliflozin/HFpEF returns status=found, conf=0.80, top_sim=0.8205, 5 sources
+    Hardware: CPU Basic (2 vCPU, 16 GB RAM), Docker SDK, port 7860
+    SDK config in deploy/hf/Dockerfile (committed). LanceDB cache (53.5 MB, 17,456 chunks) bundled into image via git-lfs.
+
+- FRONTEND IS DEPLOYED ON VERCEL:
+    URL: https://frontend-sandy-phi-72.vercel.app  (stable alias)
+    NEXT_PUBLIC_API_URL env var = https://Tony0489-MedCite-api.hf.space (set in Vercel dashboard, baked into bundle).
+    Verified end-to-end: prod-equivalent POST through this URL chain returns same conf=0.80, top_sim=0.8205, 5 sources.
+    Vercel project name is "frontend" (default from dir name). Stable alias is the right URL to use everywhere.
+
+- DEPLOY MIGRATION DONE THIS SESSION (Day 3 afternoon, 2026-04-25):
+    Initially deployed via Cloudflare Quick Tunnel (https://ist-females-talking-gray.trycloudflare.com → laptop:8000) + Vercel.
+    User asked about a free option without owning a domain — HF Spaces was the answer (16 GB RAM free tier dwarfs Render/Railway 512 MB; was wrongly grouped with them in the previous session's deploy decision).
+    Created HF Space `Tony0489/MedCite-api` (Docker SDK, CPU Basic, Public).
+    Wrote deploy/hf/Dockerfile (Python 3.12 slim, non-root UID 1000, port 7860, pre-downloads MiniLM-L6-v2 at build time, bundles backend/ + data/lancedb/ at /home/user/app/...).
+    Wrote deploy/hf/sync.ps1 — copies backend + lancedb to sibling dir ..\medcite-hf-space\, sets up git-lfs (track *.lance + data/lancedb/**), force-pushes to HF.
+    First push rejected (binary files); fixed by configuring git-lfs BEFORE first commit; re-pushed successfully (833 LFS objects, 56 MB).
+    HF build took ~2 min (faster than expected — torch wheels likely cached). Stage went BUILDING -> APP_STARTING -> RUNNING.
+    Updated NEXT_PUBLIC_API_URL on Vercel from trycloudflare URL -> hf.space URL. Redeployed Vercel. Verified bundle contains the new URL.
+    Cloudflare Quick Tunnel is STILL RUNNING in the background (PID was 5848 in this session) as a fallback — user can kill it whenever, no longer in the request path.
+
+- HARD CAVEATS WITH HF SPACES FREE TIER:
+    1. Auto-sleeps after 48h of no traffic. First request after sleep takes ~30s cold start.
+       Mitigation: hit /health once an hour during demo day, or use UptimeRobot free tier.
+    2. CPU is shared pool. Sentence-transformers encode is ~5-8s vs ~1s on laptop.
+       Hero query total latency: ~8s through HF vs ~3s direct on laptop. Still under "feels fast" threshold.
+    3. Self-improvement write-back persists in container's writable fs only. If the container restarts (e.g. Space rebuild, HF maintenance), all live-search-absorbed articles are lost.
+       For tomorrow's demo, this is FINE — the container won't restart during the 2-min window.
+    4. The bundled LanceDB cache (17,456 chunks) ALREADY contains the 21 TB articles + 18 metformin/CKD articles absorbed on Day 1-2, so the TB self-improvement story still works.
+
+- SECURITY DEBT TO ADDRESS:
+    The HF write token `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` was pasted into chat in this session. Rotate it via https://huggingface.co/settings/tokens before going public with anything.
+
+TODAY — DAY 3 STILL REMAINING (fresh chat):
+1. RECORD 2-MINUTE BACKUP DEMO VIDEO on the deployed prod URL (https://frontend-sandy-phi-72.vercel.app — NOT localhost). Hit all 3 flows:
+   - Hero #2 empagliflozin/HFpEF -> Tier-1 hit, RCT/Review badges, conf 0.80
+   - Hero #4 CAP antibiotics 2024 -> live escalation showstopper (3-stage progress -> cited answer + "Added N articles" chip). DO NOT click before recording — first click absorbs it into the cache and ruins the showstopper.
+   - Hero #5 acetaminophen 3rd trimester -> abstention screen ("closest match scored 0.53").
+   This is the insurance. Never demo without it.
+
+2. OPTIONAL UPGRADES (in order; revert any that don't cleanly win):
+   A. SYNTHESIZER_MODEL=gemini-2.5-pro (Tier 1 quota safe). Bump max_output_tokens to 8192 in agents/synthesizer.py. Keep Flash-Lite as fallback. To deploy: re-run .\deploy\hf\sync.ps1 -HfUser Tony0489 -HfSpace MedCite-api -HfToken <new_token>. Set the model env var as a Space Secret before pushing.
+   B. Add infectious_diseases / oncology / nephrology specialties; bump ARTICLES_PER_SPECIALTY 5000 -> 7500. Re-run ingestion locally (~30-60 min), then re-sync to HF (the sync script copies the new lance dir). Re-tune SIMILARITY_THRESHOLD if distribution shifts. NOTE: this absorbs the new live-search showstopper into Tier 1 — pick a fresh out-of-corpus query for the demo.
+   C. Widen 2015 -> 2010 in SPECIALTIES queries in config.py (cheapest win).
+   D. PWA install layer (45 min, additive, no service worker — see §9 Day 3 option D for files to create). Hard prereq: backend reachable via HTTPS — DONE.
+
+3. PITCH + Q&A PREP. Read PITCH.md cover to cover, build slides from it, rehearse the 4-sentence trust pitch and the 9 Q&A answers.
+
+HARD RULES (from §3, do not violate):
+1. LLMs never write URLs — backend stitches them from PMIDs in metadata
+2. Synthesizer prompt forbids prior knowledge; chunks-only or INSUFFICIENT_EVIDENCE
+3. Verifier must be a different vendor (Google synth + Meta/Llama verify)
+4. Confidence < 0.75 -> abstain
+5. Live search only runs when user clicks button (never automatic)
+6. Every source card shows quoted passage + clickable PubMed + DOI URL
+7. UI is a clinical tool (one question, one answer card) — NOT a chatbot
+
+WORKFLOW:
+- Commit after each logical piece. Conventional commit messages.
+- Never commit .env or frontend/.env.local (both gitignored).
+- The deploy/hf/ sibling dir lives at ..\medcite-hf-space\ (outside the repo) so the 53 MB lancedb cache never lands in GitHub. Re-run .\deploy\hf\sync.ps1 to redeploy backend.
+- Repo: https://github.com/Abhishek0489/medCite.git on branch main. Last commit pushed: d4cf4d9.
+
+ENV: Windows + PowerShell + Python 3.12 venv at backend/.venv/. Node 22 LTS. Backend can still be run locally (.venv\Scripts\Activate.ps1; uvicorn main:app --port 8000) but PROD requests don't touch it anymore. .env at repo root has all keys (GOOGLE, GROQ, NCBI). frontend/.env.local has NEXT_PUBLIC_API_URL=http://localhost:8000 for local dev (never override; only Vercel dashboard is set to the HF URL).
+
+DEV SERVERS LOCAL (still running from the Day-3 morning session — verify before assuming):
+  Backend on http://localhost:8000 (uvicorn --reload, PID may have changed)
+  Frontend on http://localhost:3000 (next dev)
+  Cloudflare Quick Tunnel still running in background as a fallback (no longer in the prod path)
+
+If anything in the deploy stack breaks during demo day:
+  - HF Space down? `Settings -> Factory rebuild` on the Space page, or re-run deploy/hf/sync.ps1.
+  - Vercel bundle stale? `cd frontend && npx vercel --prod --yes`.
+  - As last resort: Vercel env back to the trycloudflare URL + cloudflared still running on the laptop.
+
+Continue from where Day-3 afternoon left off. Reference PROJECT_SPEC.md and PITCH.md.
