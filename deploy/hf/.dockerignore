@@ -1,0 +1,18 @@
+# Keep the build context tiny; we only need backend/ and data/lancedb/.
+frontend/
+backend/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+data/raw/
+.git/
+.vercel/
+node_modules/
+.next/
+.env
+.env.*
+*.log
+*.md
+.gitignore
+.cursorignore
+deploy/
