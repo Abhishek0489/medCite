@@ -463,9 +463,17 @@ SOURCES:
   - Google AI Studio is now on **Tier 1** (billing enabled). Flash-Lite limits jumped from 10 RPM / 20 RPD → **4,000 RPM / unlimited RPD**. Pro is now viable for Day-3 A/B test (150 RPM / 1,000 RPD). Worst-case full-hackathon spend: under $2.
   - Groq dashboard verified: `llama-3.3-70b-versatile` at 30 RPM / **1K RPD / 12K TPM / 100K TPD** (slightly tighter than the README quoted previously). 1 verifier call ≈ 2K tokens → ~50 calls/day before TPD throttle. Plenty for the demo. Real spend so far: $0.01 projected (free tier, no card).
 
+### Day 3 morning (2026-04-25, this session) — Done
+- [x] Local sanity-check before deploy: backend on :8000 + frontend on :3000 both healthy. Empagliflozin/HFpEF Tier-1 hero query verified end-to-end (`status=found`, `conf=0.80`, `top_sim=0.8205`, 5 sources with full quoted_passage + PubMed + DOI URLs).
+- [x] **Three production-safety fixes committed (`563d6a2`)** — required for cloud deploy where stdout is redirected to log-capture pipes:
+  - `model.encode(..., show_progress_bar=False)` in `retrieval/local_search.py` and `retrieval/live_search.py`. Tqdm's carriage-return writes to a redirected stderr on Windows raise `OSError [Errno 22]` mid-request and surface as `"Local pipeline failed: [Errno 22] Invalid argument"` with no traceback. Same bug will fire on Render/Railway/HF Spaces (all redirect stdout) — this fix is mandatory before deploy.
+  - `sys.stdout/stderr.reconfigure(encoding='utf-8', errors='replace')` at startup in `main.py`. Backstop for any non-cp1252 chars (em-dash, ≥, …) emitted by synth/verify loggers when stdout is redirected on Windows.
+  - Full traceback + exception type logged via `medcite.api` logger on `/query/local` and `/query/live` failures. Previous handler stringified the exception with no type and no stack — debugging a 500 cost ~30 min today.
+- [x] **`PITCH.md` added at repo root (`392a975`)** — pitch deck reference with elevator pitch, 7 hard rules slide content, architecture, all 5 hero queries with demo lines, 2-min demo script, 9 anticipated Q&A with rehearsed answers, the numbers, the closing line. Read this before building the slides; don't regenerate.
+- [x] **Day-3 deploy decision: Cloudflare Tunnel + Vercel (both free).** Skipped Render/Railway because (a) free tiers can't fit sentence-transformers + LanceDB in 512MB RAM and have ~30s cold starts, (b) paid tiers cost $5–7/mo for what's essentially a weekend demo. Cloudflare Tunnel exposes the existing `localhost:8000` (already verified, write-back cache intact, API keys never leave the laptop) at a stable `*.trycloudflare.com` URL via outbound-only connection — zero cold start, zero cost, zero deployment work, ~5 min setup. Tradeoff: backend is dead if laptop is off, but laptop is on at the venue anyway and the 2-min backup demo video is the safety net.
+
 ### Day 3 — Not started (in this exact order)
-- [ ] **3.1 Deploy backend** to Render or Railway with persistent volume for `data/lancedb/`. Get HTTPS URL. Verify `/health` from public internet.
-- [ ] **3.2 Deploy frontend** to Vercel; set `NEXT_PUBLIC_API_URL` env var to the deployed backend URL. Verify Tier-1 hero query end-to-end on the prod URL.
+- [ ] **3.1 Deploy backend via Cloudflare Tunnel.** Install `cloudflared` (winget or `.msi`), `cloudflared tunnel login` (browser auth), `cloudflared tunnel create medcite`, `cloudflared tunnel route dns` (or use a quick tunnel `cloudflared tunnel --url http://localhost:8000` for a `*.trycloudflare.com` URL). Verify `/health` from public internet (e.g. via phone hotspot or curl from `webhook.site`). Make sure backend is running on `:8000` BEFORE starting the tunnel.
 - [ ] **3.3 Record 2-minute backup demo video** on the deployed system (NOT localhost). Hit all 3 flows: Tier-1 hit, live escalation showstopper, abstention. **DO NOT skip — never demo without insurance.**
 - [ ] **3.4 (Optional) Day-3 upgrades** in this order; revert any that don't cleanly win on the 5 hero queries:
   - [ ] A. A/B test `SYNTHESIZER_MODEL=gemini-2.5-pro` (Tier 1 quota now safe). Bump `max_output_tokens` to 8192 in `agents/synthesizer.py`. Keep Flash-Lite as fallback.
@@ -496,47 +504,95 @@ Read PROJECT_SPEC.md at the repo root COMPLETELY before taking any action.
 Non-negotiables in §3. API shape locked in §6. Component list in §8.
 Day 3 step list in §9 + §12 "Day 3 — Not started". Current state in §12.
 
-CURRENT STATE (end of Day 2, frontend done, all pushed to origin/main):
+CURRENT STATE (end of Day-3 morning, all pushed to origin/main):
+- Last commit on main: 392a975. Most recent commits:
+    392a975 docs: add PITCH.md — pitch deck reference with demo script and Q&A
+    563d6a2 fix(backend): UTF-8 stdio + disable tqdm + log tracebacks for cloud deploy
+    706b6ef chore: Day-3 plan edits to PROJECT_SPEC.md
+    68b8df1 chore: refresh hero queries (§11) and disable Next.js dev indicator badge
 - Backend on :8000 healthy, 17,456 LanceDB chunks (Diabetes + Cardiology +
   ~21 TB articles + ~18 metformin/CKD articles auto-absorbed via the live
-  multi-AI write-back loop on Day 1-2).
+  multi-AI write-back loop on Day 1-2). Verified end-to-end this morning:
+  empagliflozin/HFpEF Tier-1 hit returns status=found, conf=0.80, top_sim=
+  0.8205, 5 sources with full quoted_passage + PubMed + DOI URLs.
+- Three production-safety fixes shipped in 563d6a2 — required for cloud
+  deploy because Render/Railway/HF Spaces all redirect stdout to log
+  capture pipes:
+    1. model.encode(..., show_progress_bar=False) in single-query encodes
+       (retrieval/local_search.py and live_search.py). Tqdm CR writes to
+       a redirected stderr on Windows raise OSError [Errno 22] mid-
+       request, which surfaces as "Local pipeline failed: [Errno 22]
+       Invalid argument" with no traceback — same bug will fire in cloud
+       hosting; this fix is mandatory.
+    2. sys.stdout/stderr.reconfigure(encoding='utf-8', errors='replace')
+       at startup in main.py — backstop for any non-cp1252 chars (em-
+       dash, ≥, …) emitted by synth/verify loggers.
+    3. Full traceback + exception type logged via medcite.api logger on
+       /query/local and /query/live failures — debugging a 500 was ~30
+       min today without it.
+- PITCH.md added at repo root (392a975) — pitch deck reference with
+  elevator pitch, 7 hard rules slide content, architecture, all 5 hero
+  queries with exact demo lines, 2-min demo script, 9 anticipated Q&A
+  with rehearsed answers, the numbers, the closing line. Read this
+  before building slides; do NOT regenerate.
 - Synthesizer: gemini-2.5-flash-lite (primary) + gemini-2.5-flash (fallback).
   Google AI Studio is on Tier 1 (billing enabled), so quota is no longer a
   concern — Pro is now safely viable for the Day-3 A/B test.
 - Verifier: llama-3.3-70b-versatile via Groq (free tier, 100K TPD ≈ ~50
   verifier calls/day; plenty for the demo).
 - Frontend: Next.js 16 + React 19 + Tailwind 4 + shadcn/ui in JS mode.
-  Note: `create-next-app@latest` shipped Next 16 not the originally-specced
-  Next 14 — no breaking impact on §3 rules. Six components per §8 all built
-  as .jsx. State machine in app/page.jsx covers all flows. Dev indicator
-  badge disabled in next.config.mjs. All 5 hero queries verified end-to-end
-  by user with screenshots. Last commit on main: 68b8df1.
+  Six components per §8 all built as .jsx. State machine in app/page.jsx
+  covers all flows. Dev indicator badge disabled in next.config.mjs. All
+  5 hero queries verified end-to-end by user with screenshots.
 - §11 hero queries refreshed to reflect current corpus reality:
   TB became a Tier-1 hit overnight via self-improvement (good demo story).
   Live-search showstopper is now CAP antibiotics 2024 (or H. pylori /
   levetiracetam as backups) — DO NOT click before stage time or write-back
   will absorb it.
 
-TODAY — DAY 3: DEPLOY + DEMO PREP (in this exact order, see §12 "Day 3"):
-1. Deploy backend to Render or Railway with persistent volume for
-   data/lancedb/. Get HTTPS URL. Verify /health from public internet.
-2. Deploy frontend to Vercel; set NEXT_PUBLIC_API_URL env var to the
-   deployed backend URL. Verify Tier-1 hero query works on prod URL.
-3. Record 2-min backup demo video on the deployed system (NOT localhost).
-   Hit all 3 flows: Tier-1 hit / live escalation / abstention. NEVER skip.
-4. ONLY THEN: optional upgrades (§9 Day 3 options A-D, §12 step 3.4):
-   A. Try gemini-2.5-pro as synth (Tier 1 quota safe; bump max_output_tokens
-      to 8192). Keep only if it wins 4/5 hero queries cleanly.
-   B. Add infectious_diseases / oncology / nephrology specialties; bump
-      ARTICLES_PER_SPECIALTY to 7500. Re-run ingestion (~30-60 min).
-      Re-tune SIMILARITY_THRESHOLD if distribution shifts.
+DAY-3 DEPLOY DECISION (locked in previous session):
+- Backend: Cloudflare Tunnel from laptop (free, zero cold-start, zero
+  cost, ~5 min setup). NOT Render/Railway — their free tiers can't fit
+  sentence-transformers + LanceDB in 512MB RAM and have 30s cold starts;
+  paid tiers cost $5-7/mo for what's a weekend demo. Cloudflare Tunnel
+  exposes the existing localhost:8000 (already verified, write-back
+  cache intact, API keys never leave the laptop) at a stable
+  *.trycloudflare.com URL via outbound-only connection.
+- Frontend: Vercel free tier (Next.js native).
+- Tradeoff: backend dies if laptop is off. Laptop is on at the venue
+  anyway and the 2-min backup demo video is the safety net.
+
+TODAY — DAY 3 REMAINING (in this exact order, see §12 "Day 3"):
+1. Install cloudflared (winget install --id Cloudflare.cloudflared OR
+   download msi). Quick tunnel first to verify pipeline:
+       cloudflared tunnel --url http://localhost:8000
+   Get the *.trycloudflare.com URL it prints. Verify /health from a
+   different network (phone hotspot, or curl from webhook.site).
+   Optional: upgrade to a named tunnel (cloudflared tunnel login →
+   create → route dns) if you want a stable URL across restarts.
+2. Deploy frontend to Vercel:
+       cd frontend && npx vercel --prod
+   Set NEXT_PUBLIC_API_URL=<tunnel URL from step 1> as an env var in
+   the Vercel dashboard. Redeploy. Verify Tier-1 hero query works on
+   the prod URL (use empagliflozin/HFpEF — should return conf 0.80).
+3. Record 2-min backup demo video on the prod URL (NOT localhost).
+   Hit all 3 flows: Tier-1 hit (#2 empagliflozin), live escalation
+   showstopper (#4 CAP antibiotics — first click ever), abstention
+   (#5 acetaminophen pregnancy). NEVER skip — this is the insurance.
+4. ONLY THEN: optional upgrades (§9 Day 3 options A-D):
+   A. Try gemini-2.5-pro as synth (Tier 1 quota safe; bump
+      max_output_tokens to 8192). Keep only if it wins 4/5 hero
+      queries cleanly.
+   B. Add infectious_diseases / oncology / nephrology specialties;
+      bump ARTICLES_PER_SPECIALTY to 7500. Re-run ingestion (~30-60
+      min). Re-tune SIMILARITY_THRESHOLD if distribution shifts.
    C. Widen 2015 → 2010 in SPECIALTIES queries (cheapest win).
    D. PWA install layer (45 min, additive, no service worker — see §9
-      Day 3 option D for exact files to create). Lets judges install the
-      site as an app on their phone. Hard prereq: backend deployed (step 1).
-5. Pitch + Q&A prep. 1-page script. Rehearse the trust pitch:
-   "ChatGPT starts with the LLM and asks it to remember sources. We start
-   with PubMed and ask the LLM to summarise what's actually there."
+      Day 3 option D for exact files to create). Lets judges install
+      the site as an app on their phone. Hard prereq: backend reachable
+      via HTTPS (step 1 done).
+5. Pitch + Q&A prep — read PITCH.md cover to cover, build slides from
+   it, rehearse the trust pitch and the 9 Q&A answers.
 
 HARD RULES (from §3, do not violate):
 1. LLMs never write URLs — backend stitches them from PMIDs in metadata
@@ -549,22 +605,25 @@ HARD RULES (from §3, do not violate):
 7. UI is a clinical tool (one question, one answer card) — NOT a chatbot
 
 WORKFLOW:
-- Commit after each logical piece (deploy step, env var change, model swap,
-  ingestion run, etc). Conventional commit messages.
+- Commit after each logical piece (cloudflared install verified, vercel
+  env var set, prod URL smoke-passed, demo video recorded, etc).
+  Conventional commit messages.
 - Never commit .env or frontend/.env.local (both gitignored at repo root).
 - Repo: https://github.com/Abhishek0489/medCite.git on branch main.
-  Last commit pushed: 68b8df1.
+  Last commit pushed: 392a975.
 
 ENV: Windows + Git Bash + Python 3.12 venv at backend/.venv/. Node 22 LTS.
 NCBI_API_KEY, GOOGLE_API_KEY (Tier 1 billing), GROQ_API_KEY all in .env.
 Frontend env at frontend/.env.local has NEXT_PUBLIC_API_URL=http://localhost:8000
-— this needs to flip to the deployed backend URL on Vercel.
+— this stays the same for local dev; flip to the tunnel URL only on
+Vercel via dashboard env var (so localhost dev keeps working).
 
-START THE TWO DEV SERVERS LOCALLY FIRST so you can sanity-check before deploy:
+START THE TWO DEV SERVERS LOCALLY FIRST so you can sanity-check before
+exposing via tunnel:
   Terminal 1: cd backend && source .venv/Scripts/activate &&
               uvicorn main:app --reload --port 8000
   Terminal 2: cd frontend && npm run dev
-Then move on to step 1 (Render/Railway deploy).
+Then move on to step 1 (cloudflared tunnel).
 
 Continue from where the previous session left off. Reference PROJECT_SPEC.md for anything you're unsure about.
 ```
