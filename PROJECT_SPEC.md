@@ -398,9 +398,27 @@ SOURCES:
 - [x] Swapped primary synth model to `gemini-2.5-flash-lite`; softened prompt; added `safety_settings=BLOCK_NONE`; bumped `max_output_tokens` to 4096; added verifier logging
 - [x] Hero-query smoke test passes: two clean `found` responses (empagliflozin HFpEF, SGLT2 elderly) with verifier confidence 0.80; out-of-scope queries abstain correctly; live TB gated by safety verifier as designed
 
+### Day 2 — Frontend (in progress, 2026-04-25)
+- [x] Node 22.16 verified; backend started on :8000, `/health` returns `gemini-2.5-flash-lite`
+- [x] Scaffolded `frontend/` with `create-next-app@latest --js --app --tailwind --eslint --no-src-dir --import-alias "@/*"`. Note: `@latest` shipped Next 16 + React 19 + Tailwind 4 (not Next 14/Tailwind 3 as originally specced); design principles unaffected, App Router + JS preserved.
+- [x] `shadcn@latest init --defaults` ran in JS mode (`tsx: false`, base style `base-nova`, base color neutral). Generated `components/ui/*.jsx` and `lib/utils.js`.
+- [x] Installed primitives: button, input, card, badge, progress, skeleton, alert, separator, textarea (lucide-react also installed automatically).
+- [x] `frontend/.env.local` and `frontend/.env.example` created with `NEXT_PUBLIC_API_URL=http://localhost:8000`.
+- [x] `lib/api.js` — `queryLocal`, `queryLive`, `checkHealth`; AbortController-aware; surfaces `detail` on non-2xx.
+- [x] All 6 spec §8 components built as `.jsx`:
+  - `QueryCard` — single textarea, Cmd/Ctrl+Enter shortcut, sky-600 Ask button, no chat history.
+  - `AnswerPanel` — TierBadge ("Verified KB" green / "Live multi-AI" amber + write-back chip), inline `[N]` chips that anchor-link to `#source-N`, ConfidenceMeter, sources list with similarity hint.
+  - `SourceCard` — citation number bubble, evidence-level badge derived from `publication_type` (RCT / Meta-analysis / Review / Guideline / Case report), italicized `quoted_passage` blockquote, separate PubMed and DOI links.
+  - `ConfidenceMeter` — 0–100% bar with emerald/amber/red bands keyed off the same 0.75 / 0.85 thresholds as §3 rule 4.
+  - `NotFoundScreen` (default export) — amber alert + 3 buttons exactly per §5 Flow B; below it, the related-articles list.
+  - `AbstainScreen` (named export from `NotFoundScreen.jsx`) — slate panel for `insufficient_evidence`; surfaces verifier's `unsupported_claims`.
+  - `LiveSearchProgress` — fake-staged 3-step progress (PubMed → Gemini → Llama 3.3) since the live endpoint is one synchronous request.
+- [x] `app/layout.jsx` (Inter font, slate-50 background) + `app/page.jsx` state machine over phases `idle | loading | live | answered | notfound | abstain | error`. Submitting a new query wipes prior result (spec §3 rule 7). Hero queries panel shown in `idle`. Live search only runs when the doctor clicks the button (spec §3 rule 5). Backend status pill in header polls `/health` once on mount.
+- [x] Dev server (`npm run dev`) up on http://localhost:3000, GET / returns 200 with no compile errors. No ESLint errors on any new file.
+- [x] Smoke-tested backend from PowerShell: empagliflozin/HFpEF query returns `status=found`, `confidence=0.80`, 5 sources with full quoted_passages and PubMed+DOI URLs.
+
 ### Not started
-- [ ] Second commit after endpoints verified ← **commit this session's fix now**
-- [ ] **Day 2:** Next.js + shadcn/ui frontend
+- [ ] Manual end-to-end click-through of the 3 flows in a real browser (open http://localhost:3000 — backend at :8000 is already running). The five hero questions from §11 are wired as one-click buttons in the idle state.
 - [ ] **Day 3:** Deploy (Vercel + Railway) + demo prep
 - [ ] **Day 3 optional upgrades (see §9 Day 3 → "optional upgrades"):**
   - [ ] A/B test `gemini-2.5-pro` as synthesizer (user has Pro access)
