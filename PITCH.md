@@ -228,3 +228,57 @@ If you only get one sentence at the end:
 > **"This isn't a chatbot. It's a clinical tool. It cites every claim, it verifies with a second model from a different company, and when it doesn't know — it says so. That's the only safe way to put an LLM in front of a doctor."**
 
 Land that, smile, take questions.
+
+---
+
+## 14. Master query sets — verification & demo
+
+Two query sets you'll run on presentation day. Keep them separate; never mix.
+
+- **Set A — Verification.** Run ~30 minutes before the judge demo. Confirms Tier-1 cache, Tier-2 live escalation, write-back, abstention, and the showstopper hero are all healthy — **without** contaminating any judge-facing query.
+- **Set B — Judge demo.** The five hero queries from §7. The homepage chips are pre-populated in the order below.
+
+### Set A — pre-demo verification (5 steps, ~3 min total)
+
+| # | Query | Channel | Expected | Why this query |
+|---|---|---|---|---|
+| A1 | Open <https://abhi04-medcite.vercel.app> and wait for the green "backend healthy" indicator (warming chip clears within ~30 s if HF Space is cold) | UI | Green dot, hero chips visible | Confirms HF Space is awake and frontend ↔ backend health check works |
+| A2 | *"Metformin contraindications in chronic kidney disease"* | UI — type & Ask | Tier-1 hit, conf ≥ 0.75, ~3 sec, 5 source cards with quoted passages | Real diabetes query, almost certainly in corpus → confirms synth (Gemini) + verify (Llama) pipeline end-to-end. **Not a hero query** — won't taint the demo. |
+| A3 | *"First-line therapy for ulcerative colitis"* | UI — type, Ask, then click *Search live* | NotFoundScreen → click → ~20 sec → cited answer + *"Added N articles to KB"* chip | Out of corpus (gastroenterology). Confirms Tier-2 PubMed → synth → verify pipeline AND write-back. **Sacrificial** — never used in the demo, so contaminating it is fine. |
+| A4 | *"Is acetaminophen safe in third trimester pregnancy?"* | UI — type & Ask, do **not** escalate | Amber abstention screen showing closest sim ≈ 0.45, *"below the safety threshold. We won't guess."* | Confirms the abstention threshold still fires at 0.55. **Read-only** — abstention writes nothing to LanceDB, so asking it now does not contaminate hero #4 (acetaminophen) in the actual demo. |
+| A5 | `POST /query/local` body `{"query":"Levetiracetam status epilepticus dose"}` against <https://Tony0489-MedCite-api.hf.space> — do **not** open this in the UI | API only | `status=not_found`, `top_sim ≈ 0.39` (well below 0.55) | **Critical.** Proves the live-multi-AI showstopper hero is still uncontaminated. **Never click "Search live" on this query before the judge demo** — write-back would absorb the articles into Tier 1 and the showstopper animation is gone. |
+
+PowerShell one-liner for A5:
+
+```powershell
+Invoke-RestMethod -Method POST -Uri https://Tony0489-MedCite-api.hf.space/query/local -ContentType 'application/json' -Body '{"query":"Levetiracetam status epilepticus dose"}'
+```
+
+**If A5 fails** (returns `status=found` or `top_sim > 0.55`): the showstopper is contaminated. Reset the bundled image (~90 s):
+
+```powershell
+.\deploy\hf\sync.ps1 -HfUser Tony0489 -HfSpace MedCite-api -HfToken hf_***
+```
+
+Then re-run A5 to confirm `top_sim ≈ 0.39` before going on stage.
+
+### Set B — judge demo (the 5 hero queries)
+
+Order matches the homepage chips left-to-right. Full demo lines + what each query proves are in §7.
+
+| Demo # | Chip label / typed query | Tier | Proves |
+|---|---|---|---|
+| 1 | *"Does empagliflozin reduce cardiovascular mortality in HFpEF?"* | Tier 1 | Speed + RCT/Review evidence badges + clickable PubMed |
+| 2 | *"First-line treatment for drug-resistant tuberculosis 2024"* | Tier 1 | Self-improvement — yesterday missed, today instant (sim 0.80) |
+| 3 | *"Levetiracetam status epilepticus dose"* | Tier 2 → write-back | **Showstopper:** PubMed → Gemini → Llama, "Added 26 articles" chip |
+| 4 | *"Is acetaminophen safe in third trimester pregnancy?"* | Abstain | Honest abstention — *"closest match scored 0.45"* |
+| 5 | *"Side effects of SGLT2 inhibitors in elderly patients"* | Tier 1 | **Backup** if any of #1–4 misbehaves — Meta-analysis badge |
+
+**Hard rules during the live demo:**
+
+1. Demo queries 1–4 in order. Query 5 is held in reserve.
+2. Do **not** click "Search live" on demo #4 (Levetiracetam) until you're at the showstopper moment.
+3. If demo #4 has been contaminated (top_sim > 0.55 in A5), the backup phrasing for the same showstopper is *"H. pylori first-line eradication 2024"* — but a `deploy/hf/sync.ps1` rebuild is the cleaner fix.
+4. The abstention on demo #4 (acetaminophen) is the feature, not a bug — do not escalate it on stage.
+
+---

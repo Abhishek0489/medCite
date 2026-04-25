@@ -42,7 +42,16 @@ If you somehow re-contaminate before the judge demo, reset (~90s):
   `.\deploy\hf\sync.ps1 -HfUser Tony0489 -HfSpace MedCite-api -HfToken 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`
 Verify reset: POST /query/local with `{"query":"Levetiracetam status epilepticus dose"}` → expect status=not_found, top_sim≈0.39.
 
-THE 5 HERO QUERIES (memorize order; chips on homepage are pre-populated in this order):
+TWO MASTER QUERY SETS (full table in PITCH.md §14):
+
+SET A — PRE-DEMO VERIFICATION (run ~30 min before judges; ~3 min total; designed to NOT contaminate Set B):
+A1. Open https://abhi04-medcite.vercel.app → wait for green "backend healthy" indicator (HF cold start may take ~30s, frontend shows "Backend warming…" during retry)
+A2. Type "Metformin contraindications in chronic kidney disease" → expect Tier-1 hit, conf ≥ 0.75, ~3 sec, 5 cited sources. Confirms synth+verify pipeline. NOT a hero query — won't taint demo
+A3. Type "First-line therapy for ulcerative colitis" → NotFoundScreen → click Search live → ~20 sec → cited answer + "Added N articles" chip. Confirms Tier-2 PubMed pipeline + write-back. SACRIFICIAL — gastroenterology, never demoed, contamination is fine
+A4. Type "Is acetaminophen safe in third trimester pregnancy?" → expect amber abstention screen, sim ≈ 0.45. Do NOT escalate. Confirms abstention threshold. READ-ONLY — abstention writes nothing to LanceDB so this is safe to ask before demoing the same query on stage
+A5. CRITICAL contamination check via API (do NOT use the UI): `Invoke-RestMethod -Method POST -Uri https://Tony0489-MedCite-api.hf.space/query/local -ContentType 'application/json' -Body '{"query":"Levetiracetam status epilepticus dose"}'` → expect status=not_found, top_sim ≈ 0.39. Proves Set B #3 (the showstopper) is still uncontaminated. If top_sim > 0.55, run `.\deploy\hf\sync.ps1 ...` to reset (~90s) then re-verify A5
+
+SET B — JUDGE DEMO (the 5 hero queries; chips on homepage pre-populated in this order):
 1. "Does empagliflozin reduce cardiovascular mortality in HFpEF?" → Tier-1, conf 0.80, top_sim 0.82, RCT/Review badges
 2. "First-line treatment for drug-resistant tuberculosis 2024" → Tier-1, top_sim ~0.80 (was 0.44 on Day 1 — self-improvement story)
 3. "Levetiracetam status epilepticus dose" → live-multi-AI showstopper. Out of corpus (no neurology specialty). After live click: "Added 26 articles" chip + cited 3-sentence answer about loading doses. Re-asking shows Tier-1 hit (legitimate "system actually learned" follow-up if demo time allows)
