@@ -314,11 +314,13 @@ SOURCES:
 
 ## 11. Hero Queries For Demo (test throughout build)
 
-1. *"What are the renal dose adjustments for metformin in CKD?"* → strong local hit, Tier 1.
-2. *"Side effects of SGLT2 inhibitors in elderly patients"* → strong local hit, Tier 1.
-3. *"Does empagliflozin reduce cardiovascular mortality in HFpEF?"* → local hit, shows RCT badge.
-4. *"First-line treatment for drug-resistant tuberculosis 2024"* → likely miss, triggers "not found" + live multi-AI — **showstopper moment**.
-5. *"Is acetaminophen safe in third trimester pregnancy?"* → may return uncertain, shows **"No reliable answer"** abstention — proves safety story.
+1. *"Side effects of SGLT2 inhibitors in elderly patients"* → strong local hit, Tier 1, **Meta-analysis** badge.
+2. *"Does empagliflozin reduce cardiovascular mortality in HFpEF?"* → strong local hit (top sim ≈ 0.82), shows **RCT** + **Review** badges, conf 0.80.
+3. *"First-line treatment for drug-resistant tuberculosis 2024"* → **self-improvement story.** Was a Tier-1 miss originally; after one Day-1 live escalation wrote 21 articles back, it now scores top sim ≈ 0.80 on Tier 1. Demo line: *"Yesterday this missed locally and we used the live fallback. Today it's instant — every doctor's question makes the next doctor's faster."*
+4. *"Best first-line antibiotic for community-acquired pneumonia in adults 2024"* → **live multi-AI showstopper.** Out of corpus (no pulmonology specialty). Triggers `NotFoundScreen` → click *Search live* → 3-stage progress (PubMed → Gemini → Llama) → cited answer + "Added N articles to KB" chip. **DO NOT click this query before the live demo** — the moment you do, write-back will absorb it into Tier 1 and the showstopper is gone. Backup if it gets contaminated: *"Recommended dose of levetiracetam for status epilepticus"* or *"First-line eradication therapy for H. pylori 2024"* (both also out-of-corpus).
+5. *"Is acetaminophen safe in third trimester pregnancy?"* → top sim ≈ 0.53, lands on `NotFoundScreen` with *"closest match scored 0.53, below the safety threshold. We won't guess."* — **proves the safety story** (§3 rule 4) vs ChatGPT-style hallucination. **Do not escalate this one** at demo time; the abstention itself is the feature.
+
+> **Note on the dropped query:** *"What are the renal dose adjustments for metformin in CKD?"* (former #1) was contaminated by a Day-2 live escalation that wrote 18 articles back — it now Tier-1 hits at conf 0.80 with `Added 18 articles to knowledge base` chip. Still a usable demo if you want a *second* self-improvement story alongside #3, but no longer a clean "abstain on edge case" example.
 
 ## 12. Current Progress
 
