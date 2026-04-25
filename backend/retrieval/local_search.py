@@ -60,7 +60,7 @@ def _get_table():
 def embed_query(query: str) -> list[float]:
     """Embed a user query with the same model used at ingestion time."""
     model = _get_model()
-    vec = model.encode([query], normalize_embeddings=True)[0]
+    vec = model.encode([query], normalize_embeddings=True, show_progress_bar=False)[0]
     return vec.tolist()
 
 

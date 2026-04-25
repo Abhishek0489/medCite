@@ -76,7 +76,7 @@ def live_search(query: str) -> tuple[list[dict], list[dict]]:
     # Rank chunks locally by cosine similarity to the query so the synthesizer
     # sees the most-relevant passages first.
     model = _get_model()
-    query_vec = model.encode([query], normalize_embeddings=True)[0]
+    query_vec = model.encode([query], normalize_embeddings=True, show_progress_bar=False)[0]
     chunk_vecs = model.encode(
         [c["chunk_text"] for c in all_chunks],
         normalize_embeddings=True,

@@ -14,6 +14,8 @@ Run:
 """
 from __future__ import annotations
 
+import logging
+import os
 import sys
 from pathlib import Path
 
@@ -21,9 +23,22 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+# Force UTF-8 on stdio. Render/Railway/Vercel all redirect process stdout to
+# a log-capture pipe; on Windows this defaults to cp1252 and any non-cp1252
+# character emitted by the synth/verify loggers (em-dash, ≥, …) raises
+# OSError [Errno 22] mid-request. errors='replace' is belt-and-braces.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import settings  # noqa: E402
 from pipeline import run_live_query, run_local_query  # noqa: E402
+
+_log = logging.getLogger("medcite.api")
 
 
 app = FastAPI(
@@ -97,7 +112,11 @@ def query_local(req: QueryRequest) -> QueryResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Local pipeline failed: {exc}")
+        _log.exception("Local pipeline failed for query=%r", req.query)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Local pipeline failed: {type(exc).__name__}: {exc}",
+        )
     return QueryResponse(**result)
 
 
@@ -108,5 +127,9 @@ def query_live(req: QueryRequest) -> QueryResponse:
     try:
         result = run_live_query(req.query.strip())
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Live pipeline failed: {exc}")
+        _log.exception("Live pipeline failed for query=%r", req.query)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Live pipeline failed: {type(exc).__name__}: {exc}",
+        )
     return QueryResponse(**result)
