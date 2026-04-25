@@ -470,26 +470,58 @@ SOURCES:
   - `sys.stdout/stderr.reconfigure(encoding='utf-8', errors='replace')` at startup in `main.py`. Backstop for any non-cp1252 chars (em-dash, ≥, …) emitted by synth/verify loggers when stdout is redirected on Windows.
   - Full traceback + exception type logged via `medcite.api` logger on `/query/local` and `/query/live` failures. Previous handler stringified the exception with no type and no stack — debugging a 500 cost ~30 min today.
 - [x] **`PITCH.md` added at repo root (`392a975`)** — pitch deck reference with elevator pitch, 7 hard rules slide content, architecture, all 5 hero queries with demo lines, 2-min demo script, 9 anticipated Q&A with rehearsed answers, the numbers, the closing line. Read this before building the slides; don't regenerate.
-- [x] **Day-3 deploy decision: Cloudflare Tunnel + Vercel (both free).** Skipped Render/Railway because (a) free tiers can't fit sentence-transformers + LanceDB in 512MB RAM and have ~30s cold starts, (b) paid tiers cost $5–7/mo for what's essentially a weekend demo. Cloudflare Tunnel exposes the existing `localhost:8000` (already verified, write-back cache intact, API keys never leave the laptop) at a stable `*.trycloudflare.com` URL via outbound-only connection — zero cold start, zero cost, zero deployment work, ~5 min setup. Tradeoff: backend is dead if laptop is off, but laptop is on at the venue anyway and the 2-min backup demo video is the safety net.
+- [x] **Day-3 deploy decision: Cloudflare Tunnel + Vercel (both free).** Skipped Render/Railway because (a) free tiers can't fit sentence-transformers + LanceDB in 512MB RAM and have ~30s cold starts, (b) paid tiers cost $5–7/mo for what's essentially a weekend demo. Cloudflare Tunnel exposes the existing `localhost:8000` (already verified, write-back cache intact, API keys never leave the laptop) at a stable `*.trycloudflare.com` URL via outbound-only connection — zero cold start, zero cost, zero deployment work, ~5 min setup. Tradeoff: backend is dead if laptop is off, but laptop is on at the venue anyway and the 2-min backup demo video is the safety net. *(Superseded same day — see Day-3 afternoon section: backend now on Hugging Face Spaces, no laptop dependency.)*
+
+### Day 3 afternoon (2026-04-25, this session) — Done
+- [x] **Cloudflare Tunnel + Vercel deploy shipped first** (`284e10c`, `f17014b`). `cloudflared` installed via winget. Quick tunnel up at `https://ist-females-talking-gray.trycloudflare.com` with `/health` and `POST /query/local` both verified through the public Cloudflare edge. Vercel project created (`frontend`), deployed under stable alias `https://frontend-sandy-phi-72.vercel.app`, `NEXT_PUBLIC_API_URL` set to the tunnel URL and baked into the bundle, prod-equivalent smoke test returned identical Tier-1 hit (`conf=0.80`, `top_sim=0.8205`).
+- [x] **Backend host switched from Cloudflare Tunnel → Hugging Face Spaces** in response to user concern about quick-tunnel URL stability across `cloudflared` restarts and laptop sleep. The previous "Render/Railway can't fit in 512 MB RAM" reasoning had wrongly grouped HF Spaces in — HF's CPU Basic tier is **2 vCPU / 16 GB RAM / 50 GB persistent storage, free**, which is comfortable for sentence-transformers + LanceDB.
+- [x] **Backend deployed to HF Space `Tony0489/MedCite-api`** (`d4cf4d9`):
+  - `deploy/hf/Dockerfile` — Python 3.12-slim, non-root UID 1000 (HF requirement), port 7860 (HF requirement), pre-downloads `sentence-transformers/all-MiniLM-L6-v2` at build time so first user query doesn't pay a 90 MB cold model fetch, bundles `backend/` and `data/lancedb/` (53.5 MB cache) into the image.
+  - `deploy/hf/sync.ps1` — copies backend code + lancedb to a sibling dir `..\medcite-hf-space\` (outside the GitHub repo, so the 53 MB binary cache never lands in `origin/main`), wipes any previous `.git`, runs `git lfs install` + `git lfs track "data/lancedb/**" "*.lance" "*.manifest" "*.txn"` BEFORE the first commit (HF's pre-receive hook rejects raw binary blobs and demands XET/LFS), then force-pushes to `https://huggingface.co/spaces/<HfUser>/<HfSpace>` over HTTPS with the write token as the password.
+  - First push attempt failed with `pre-receive hook declined: Please use https://huggingface.co/docs/hub/xet to store binary files` — fixed by configuring git-lfs before the first commit and re-pushing (833 LFS objects, 56 MB, ~4 min upload).
+  - HF build was unexpectedly fast (~2 min from push to `RUNNING`), suggesting torch + transformers wheels were cached in HF's build infra. Stage went `BUILDING` → `APP_STARTING` → `RUNNING`.
+  - Four Space Secrets configured via dashboard before push: `GOOGLE_API_KEY`, `GROQ_API_KEY`, `NCBI_API_KEY`, `NCBI_EMAIL`. They become real env vars in the container; `config.py`'s `os.getenv(...)` reads them transparently (`load_dotenv` is a no-op since no `.env` file ships in the image).
+- [x] **Vercel `NEXT_PUBLIC_API_URL` switched** from the trycloudflare URL to `https://Tony0489-MedCite-api.hf.space`. Frontend redeployed (`vercel --prod --yes`); JS bundle verified to contain the HF URL by curl-grepping the chunk files. Final prod smoke test: hero #2 returns `status=found, tier=local, conf=0.80, top_sim=0.8205, 5 sources` through the full `frontend-sandy-phi-72.vercel.app` → `Tony0489-MedCite-api.hf.space` chain — identical to laptop, proving the lancedb cache shipped intact via LFS.
+- [x] **Cloudflare Tunnel left running on the laptop as a fallback** (no longer in the prod request path). Can be killed at any time. If HF Space breaks during demo day, flipping Vercel env back to the trycloudflare URL + redeploying gets the laptop-backed path live in ~3 min.
+
+**Production stack, end-to-end:**
+```
+Browser
+  → https://frontend-sandy-phi-72.vercel.app   (Vercel, free tier, Next.js 16)
+  → JS bundle hits → https://Tony0489-MedCite-api.hf.space   (HF Spaces Docker, free, 16 GB RAM, port 7860)
+  → /home/user/app/data/lancedb (17,456 chunks bundled)
+  → Gemini 2.5 Flash-Lite (Google AI Studio Tier 1) → Llama 3.3 70B (Groq free tier)
+  → cited answer back to browser
+```
+Zero laptop dependency. Total query latency through the full chain: ~8 s (vs ~3 s direct on laptop — the difference is HF's shared CPU on the encode step + a network round-trip).
+
+### HF Spaces — caveats to know before demo
+1. **Auto-sleep after 48 h of idle.** First request after sleep takes ~30 s to spin the container up. Mitigation: hit `/health` once an hour during demo day, or set up UptimeRobot free tier.
+2. **Shared CPU pool.** Encode is ~5–8 s on HF vs ~1 s on the laptop. Total query latency ~8 s vs ~3 s. Still under the "feels fast" threshold for clinical Q&A.
+3. **Self-improvement write-back persists in the container's writable fs only.** If the container restarts (Space rebuild, HF maintenance), live-search-absorbed articles since the last image build are lost. The bundled image already contains the 21 TB articles + 18 metformin/CKD articles absorbed on Day 1-2, so the TB self-improvement story is preserved across restarts.
+4. **Re-deploy = re-run `.\deploy\hf\sync.ps1 -HfUser Tony0489 -HfSpace MedCite-api -HfToken hf_xxx`.** The script wipes the sibling deploy dir and force-pushes a fresh single-commit history every time — clean and idempotent. New backend code edits or a freshly re-ingested LanceDB get picked up automatically because the script copies from the live `backend/` and `data/lancedb/` trees.
 
 ### Day 3 — Not started (in this exact order)
-- [ ] **3.1 Deploy backend via Cloudflare Tunnel.** Install `cloudflared` (winget or `.msi`), `cloudflared tunnel login` (browser auth), `cloudflared tunnel create medcite`, `cloudflared tunnel route dns` (or use a quick tunnel `cloudflared tunnel --url http://localhost:8000` for a `*.trycloudflare.com` URL). Verify `/health` from public internet (e.g. via phone hotspot or curl from `webhook.site`). Make sure backend is running on `:8000` BEFORE starting the tunnel.
-- [ ] **3.3 Record 2-minute backup demo video** on the deployed system (NOT localhost). Hit all 3 flows: Tier-1 hit, live escalation showstopper, abstention. **DO NOT skip — never demo without insurance.**
+- [ ] **3.3 Record 2-minute backup demo video** on the deployed prod URL `https://frontend-sandy-phi-72.vercel.app` (NOT localhost, NOT the trycloudflare URL). Hit all 3 flows: Tier-1 hit (#2 empagliflozin/HFpEF), live escalation showstopper (#4 CAP antibiotics — first click ever), abstention (#5 acetaminophen pregnancy). **DO NOT skip — never demo without insurance.**
 - [ ] **3.4 (Optional) Day-3 upgrades** in this order; revert any that don't cleanly win on the 5 hero queries:
-  - [ ] A. A/B test `SYNTHESIZER_MODEL=gemini-2.5-pro` (Tier 1 quota now safe). Bump `max_output_tokens` to 8192 in `agents/synthesizer.py`. Keep Flash-Lite as fallback.
-  - [ ] B. Add `infectious_diseases` + `oncology` + `nephrology` specialties; bump `ARTICLES_PER_SPECIALTY` to 7500. Re-run ingestion (~30-60 min). Re-tune `SIMILARITY_THRESHOLD` if distribution shifts. Note: this absorbs the new live-search showstopper into Tier 1, so pick a fresh out-of-corpus query for the demo afterward.
-  - [ ] C. Widen `2015` → `2010` in `SPECIALTIES` queries in `config.py` (cheapest win, more foundational reviews).
-  - [ ] D. **PWA install layer** (see §9 Day 3 option D). 45 min, additive, no native rewrite. Lets judges install the website as an app on their phone home screen. Hard prereq: backend deployed (3.1).
+  - [ ] A. A/B test `SYNTHESIZER_MODEL=gemini-2.5-pro` (Tier 1 quota now safe). Bump `max_output_tokens` to 8192 in `agents/synthesizer.py`. Keep Flash-Lite as fallback. To deploy: set the env var as a Space Secret on HF + re-run `deploy/hf/sync.ps1` to rebuild the image.
+  - [ ] B. Add `infectious_diseases` + `oncology` + `nephrology` specialties; bump `ARTICLES_PER_SPECIALTY` to 7500. Re-run ingestion locally (~30-60 min), then re-sync to HF (the sync script copies the new lance dir). Re-tune `SIMILARITY_THRESHOLD` if distribution shifts. Note: this absorbs the new live-search showstopper into Tier 1, so pick a fresh out-of-corpus query for the demo afterward.
+  - [ ] C. Widen `2015` → `2010` in `SPECIALTIES` queries in `config.py` (cheapest win, more foundational reviews). Re-run ingestion + re-sync to HF.
+  - [ ] D. **PWA install layer** (see §9 Day 3 option D). 45 min, additive, no native rewrite. Lets judges install the website as an app on their phone home screen. Hard prereq: backend deployed via HTTPS — DONE.
 - [ ] **3.5 Pitch + Q&A prep.** 1-page pitch script. Rehearse the 4-sentence trust pitch ("ChatGPT starts with the LLM and asks it to remember sources. We start with PubMed and ask the LLM to summarise…").
+
+### Security debt — rotate before going public
+- The HF write token `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` was pasted into the agent chat during the deploy session. It's only scoped to write to `Tony0489/*` Spaces, but rotate it via <https://huggingface.co/settings/tokens> when you have a moment.
 
 ### Known minor issue (non-blocking)
 - After live write-back to LanceDB, the in-process table handle sometimes returns the pre-writeback similarity (e.g. write-back added 21 TB articles, immediate follow-up local query still returned top_sim 0.4439). Hot-reloading the backend or waiting a few seconds clears it. Either an in-process LanceDB cache or the PubMed-fetch query string isn't byte-equal to the embedded query. Worth investigating on Day 3 morning if time allows; not on the critical path.
 
 ### Key env vars user has set (already in `.env`)
-- `GOOGLE_API_KEY` (Gemini, Tier 1 billing enabled)
-- `GROQ_API_KEY` (free tier)
-- `NCBI_API_KEY` + `NCBI_EMAIL` (free)
-- `NEXT_PUBLIC_API_URL=http://localhost:8000` (in `frontend/.env.local`; will need to point at deployed backend URL on Day 3)
+- `GOOGLE_API_KEY` (Gemini, Tier 1 billing enabled) — also set as HF Space Secret
+- `GROQ_API_KEY` (free tier) — also set as HF Space Secret
+- `NCBI_API_KEY` + `NCBI_EMAIL` (free) — also set as HF Space Secrets
+- `NEXT_PUBLIC_API_URL=http://localhost:8000` (in `frontend/.env.local`; **only for local `npm run dev`**)
+- `NEXT_PUBLIC_API_URL=https://Tony0489-MedCite-api.hf.space` (set in **Vercel dashboard** for `production` env; baked into the prod bundle)
 
 ---
 
