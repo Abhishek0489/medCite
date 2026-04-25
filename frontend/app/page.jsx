@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Stethoscope, AlertCircle } from "lucide-react";
+import { Stethoscope, AlertCircle, RotateCw } from "lucide-react";
 import QueryCard from "@/components/QueryCard";
 import AnswerPanel from "@/components/AnswerPanel";
 import NotFoundScreen, { AbstainScreen } from "@/components/NotFoundScreen";
@@ -168,6 +168,10 @@ export default function HomePage() {
     [handleSubmit]
   );
 
+  const handleRefresh = useCallback(() => {
+    window.location.reload();
+  }, []);
+
   const synthLabel = useMemo(() => {
     if (!health || health.status !== "ok") return null;
     return `${health.synthesizer_model} · ${health.verifier_model}`;
@@ -190,38 +194,50 @@ export default function HomePage() {
             never a guess.
           </p>
         </div>
-        <div className="hidden sm:flex flex-col items-end text-right">
-          <span
-            className={
-              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ring-1 " +
-              (health?.status === "ok"
-                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                : health?.status === "warming"
-                  ? "bg-slate-100 text-slate-600 ring-slate-200"
-                  : "bg-rose-50 text-rose-700 ring-rose-200")
-            }
+        <div className="flex flex-col items-end gap-2 text-right">
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 shadow-sm transition-colors hover:border-sky-300 hover:text-sky-700"
+            aria-label="Refresh app"
+            title="Refresh app"
           >
+            <RotateCw className="h-3.5 w-3.5" aria-hidden />
+            Refresh
+          </button>
+          <div className="hidden sm:flex flex-col items-end text-right">
             <span
               className={
-                "h-1.5 w-1.5 rounded-full " +
+                "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ring-1 " +
                 (health?.status === "ok"
-                  ? "bg-emerald-500"
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
                   : health?.status === "warming"
-                    ? "bg-slate-400"
-                    : "bg-rose-500")
+                    ? "bg-slate-100 text-slate-600 ring-slate-200"
+                    : "bg-rose-50 text-rose-700 ring-rose-200")
               }
-            />
-            {health?.status === "ok"
-              ? "Backend online"
-              : health?.status === "warming"
-                ? "Backend warming..."
-                : "Backend offline"}
-          </span>
-          {synthLabel ? (
-            <span className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">
-              {synthLabel}
+            >
+              <span
+                className={
+                  "h-1.5 w-1.5 rounded-full " +
+                  (health?.status === "ok"
+                    ? "bg-emerald-500"
+                    : health?.status === "warming"
+                      ? "bg-slate-400"
+                      : "bg-rose-500")
+                }
+              />
+              {health?.status === "ok"
+                ? "Backend online"
+                : health?.status === "warming"
+                  ? "Backend warming..."
+                  : "Backend offline"}
             </span>
-          ) : null}
+            {synthLabel ? (
+              <span className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">
+                {synthLabel}
+              </span>
+            ) : null}
+          </div>
         </div>
       </header>
 
