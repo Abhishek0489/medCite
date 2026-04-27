@@ -565,3 +565,62 @@ in §3, API shape in §6, component list in §8, polish scope in §9
 ("Day 3 polish — locked scope") and §12 ("Day 3 — Remaining"). Read
 PITCH.md before building any slides; do NOT regenerate it.
 ```
+
+---
+
+## New Chat Bootstrap Prompt (project-wide handoff)
+
+Use this prompt in a brand-new chat when you want the assistant to understand
+the full MedCite system quickly (architecture, constraints, demo flow, and
+what to avoid breaking):
+
+```
+You are resuming work on "MedCite" (Jubilant Pharma hackathon): a clinical Q&A
+web app for doctors that returns short, cited answers from PubMed and abstains
+when confidence is low.
+
+Read order (mandatory):
+1) PROJECT_SPEC.md fully — this is the technical source of truth.
+2) PITCH.md fully — canonical demo/deck content and judge narrative.
+3) RESUME_PROMPT.txt — current session state and immediate next actions.
+
+Non-negotiables (never violate):
+- LLMs never write URLs; backend stitches PubMed/DOI from metadata.
+- Synthesizer never answers from prior knowledge (chunks-only or INSUFFICIENT_EVIDENCE).
+- Verifier must be a different vendor from synthesizer.
+- Confidence < 0.75 => abstain.
+- Live PubMed runs only when doctor clicks (never auto-run on local miss).
+- Every source card must show quoted passage + clickable PubMed + DOI.
+- UI is a clinical tool (one question, one answer), not a chatbot.
+
+Current architecture (shipped):
+- Frontend: Next.js 16 + JS + Tailwind 4 + shadcn/ui, hosted on Vercel.
+- Backend: FastAPI + LanceDB + MiniLM embeddings, hosted on HF Spaces.
+- Synthesizer: Gemini 2.5 Flash-Lite.
+- Verifier: Llama 3.3 70B via Groq.
+- Corpus: ~10k PubMed abstracts, 17,456 chunks in LanceDB.
+- Retrieval thresholds: local similarity 0.55; verifier confidence 0.75.
+
+Two-tier flow:
+1) Tier 1 local search (`/query/local`): embed query -> LanceDB top-k.
+   - If top_sim >= 0.55: synthesize + verify -> answer if conf >= 0.75 else abstain.
+   - If top_sim < 0.55: return not_found with score (no automatic live call).
+2) Tier 2 live search (`/query/live`, user-triggered):
+   - PubMed esearch/efetch -> chunk/rank -> same synth+verify.
+   - If successful, write new chunks back to LanceDB (self-improvement loop).
+
+Critical demo safety:
+- Never run live search on "Levetiracetam status epilepticus dose" before stage time;
+  doing so contaminates the showstopper by writing it into Tier 1 cache.
+- If contaminated, reset HF backend with deploy/hf/sync.ps1 and re-verify
+  `/query/local` for Levetiracetam returns `status=not_found, top_sim~0.39`.
+
+When asked to build slides:
+- Use PITCH.md as locked copy source; do not rewrite pitch content.
+- Keep trust pitch verbatim and preserve hero query order from PITCH.md.
+
+When asked to change code:
+- Keep changes minimal, test quickly, and preserve all hard rules above.
+- Prefer explicit abstention over speculative answers.
+- Report risks if a change could affect demo reliability.
+```

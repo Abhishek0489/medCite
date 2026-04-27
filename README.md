@@ -17,19 +17,62 @@ Every citation is real. LLMs never invent URLs.
 
 ## Quick start
 
-```bash
-# Backend
-cd backend
-python -m venv .venv
-# activate venv (Windows: .venv\Scripts\activate | macOS/Linux: source .venv/bin/activate)
-pip install -r requirements.txt
-uvicorn main:app --reload
+Run locally with two terminals: backend on `:8000`, frontend on `:3000`.
 
-# Frontend
-cd frontend
+### Prerequisites
+
+- Python 3.12
+- Node.js 22 LTS + npm
+
+### Terminal 1 — Backend (PowerShell)
+
+```powershell
+cd "e:\Development\jubiliant hackathon\backend"
+
+# One-time setup
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# Run API
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Terminal 1 — Backend (Git Bash alternative)
+
+```bash
+cd "/e/Development/jubiliant hackathon/backend"
+python -m venv .venv
+./.venv/Scripts/activate
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Terminal 2 — Frontend
+
+```bash
+cd "/e/Development/jubiliant hackathon/frontend"
 npm install
+```
+
+Create `frontend/.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+Then run:
+
+```bash
 npm run dev
 ```
+
+### Verify locally
+
+- Frontend: `http://localhost:3000`
+- Backend health: `http://localhost:8000/health`
+
+If the UI shows `Backend offline`, confirm `NEXT_PUBLIC_API_URL` is set to `http://localhost:8000`, then restart the frontend dev server.
 
 ## Stack
 
