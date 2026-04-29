@@ -693,7 +693,7 @@ def slide_8_numbers(prs):
         size=12, color=MUTED, italic=True, align=PP_ALIGN.CENTER,
     )
 
-    add_footer(s, "8 / 10")
+    add_footer(s, "8 / 12")
 
 
 def slide_9_qa(prs):
@@ -740,10 +740,78 @@ def slide_9_qa(prs):
         size=11, color=MUTED, italic=True, align=PP_ALIGN.CENTER,
     )
 
-    add_footer(s, "9 / 10")
+    add_footer(s, "9 / 12")
 
 
-def slide_10_closing(prs):
+def slide_10_local_kb_benefits(prs):
+    s = add_blank_slide(prs)
+    add_title(s, "Why we start with a local knowledge base.",
+              kicker="System design choice")
+
+    add_bullets(
+        s, Inches(0.95), Inches(1.95), Inches(11.5), Inches(4.9),
+        [
+            ("Fast and reliable by default.  ",
+             "Most doctor questions are answered in seconds without waiting on live PubMed calls."),
+            ("Not blocked by external API limits.  ",
+             "Live PubMed can face rate limits, latency spikes, and dependency risk under load."),
+            ("Scales better for repeated queries.  ",
+             "Common questions hit local cache instantly instead of repeating external calls."),
+            ("We control the data layer end-to-end.  ",
+             "We decide what is indexed, how it is chunked, versioned, and quality-checked."),
+            ("Security and governance are stronger.  ",
+             "Data handling stays on controlled backend infrastructure with auditable retrieval rules."),
+            ("Live search remains an explicit fallback.  ",
+             "If local evidence is weak, doctor can trigger live PubMed plus verification."),
+        ],
+        size=15, line_spacing=1.45,
+    )
+
+    add_rect(s, Inches(0.95), Inches(6.55), Inches(11.5), Inches(0.42), fill=SURFACE, line=RULE)
+    add_text(
+        s, Inches(0.95), Inches(6.6), Inches(11.5), Inches(0.3),
+        "Tier-1 local-first architecture = speed, control, and resilience.",
+        size=12, color=MUTED, italic=True, align=PP_ALIGN.CENTER,
+    )
+
+    add_footer(s, "10 / 12")
+
+
+def slide_11_frontend_freedom(prs):
+    s = add_blank_slide(prs)
+    add_title(s, "One backend, many frontends.",
+              kicker="Platform flexibility")
+
+    add_bullets(
+        s, Inches(0.95), Inches(1.95), Inches(11.5), Inches(4.9),
+        [
+            ("Backend is frontend-agnostic.  ",
+             "FastAPI endpoints are independent of UI framework and can serve any client."),
+            ("No backend rewrite for UI changes.  ",
+             "We can redesign UX and interaction flow without changing retrieval or verifier logic."),
+            ("Multi-platform ready by design.  ",
+             "The same API powers our production web app and can power mobile or desktop clients."),
+            ("Proof of portability.  ",
+             "Alongside the web app, we also built a Flutter demo client (with current hackathon limits)."),
+            ("Faster iteration with safer core logic.  ",
+             "Frontend can move quickly while backend safety rules remain stable."),
+            ("Future-ready integration layer.  ",
+             "Hospital portals, internal tools, and partner apps can all use the same API core."),
+        ],
+        size=15, line_spacing=1.45,
+    )
+
+    add_rect(s, Inches(0.95), Inches(6.55), Inches(11.5), Inches(0.42), fill=SURFACE, line=RULE)
+    add_text(
+        s, Inches(0.95), Inches(6.6), Inches(11.5), Inches(0.3),
+        "One verified backend, many possible interfaces.",
+        size=12, color=MUTED, italic=True, align=PP_ALIGN.CENTER,
+    )
+
+    add_footer(s, "11 / 12")
+
+
+def slide_12_closing(prs):
     s = add_blank_slide(prs)
     # full-bleed accent panel left
     add_rect(s, Inches(0), Inches(0), Inches(0.4), SLIDE_H, fill=ACCENT)
@@ -794,6 +862,8 @@ def slide_10_closing(prs):
         size=12, color=MUTED, italic=True, align=PP_ALIGN.CENTER,
     )
 
+    add_footer(s, "12 / 12")
+
 
 # --------------------------------- main --------------------------------
 
@@ -811,7 +881,9 @@ def build():
     slide_7_live_demo(prs)
     slide_8_numbers(prs)
     slide_9_qa(prs)
-    slide_10_closing(prs)
+    slide_10_local_kb_benefits(prs)
+    slide_11_frontend_freedom(prs)
+    slide_12_closing(prs)
 
     prs.save(OUT_PATH)
     print(f"wrote {OUT_PATH}  ({OUT_PATH.stat().st_size / 1024:.1f} KB)")

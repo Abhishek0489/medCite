@@ -74,6 +74,24 @@ npm run dev
 
 If the UI shows `Backend offline`, confirm `NEXT_PUBLIC_API_URL` is set to `http://localhost:8000`, then restart the frontend dev server.
 
+## Quick run (Flutter Windows frontend)
+
+Run the Windows desktop frontend from `frontEndapp`:
+
+```powershell
+cd "e:\Development\jubiliant hackathon\frontEndapp"
+flutter pub get
+flutter run -d windows
+```
+
+Use Hugging Face backend directly:
+
+```powershell
+flutter run -d windows --dart-define=MEDCITE_BASE_URL=https://Tony0489-MedCite-api.hf.space
+```
+
+For full Flutter setup details, see `frontEndapp/README.md`.
+
 ## Stack
 
 - **Frontend:** Next.js 16 (App Router, JavaScript) + Tailwind 4 + shadcn/ui
