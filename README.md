@@ -4,6 +4,9 @@ Medical Q&A for doctors — fast, cited, trustworthy. Built for the Jubilant Jub
 
 **Full project spec:** see [`PROJECT_SPEC.md`](./PROJECT_SPEC.md).
 
+**Live app (Vercel):** [https://abhi04-medcite.vercel.app](https://abhi04-medcite.vercel.app)  
+**Working demo video:** [medCite_demoVid.mp4 (Google Drive)](https://drive.google.com/file/d/1RpnZBwDC35FC8sJzAMw3Q8RK4z3PcS1n/view?usp=sharing)
+
 ## What it does
 
 Doctor types a medical question. System:
