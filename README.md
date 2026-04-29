@@ -1,6 +1,6 @@
 # MedCite
 
-Medical Q&A for doctors — fast, cited, trustworthy. Built for the Jubilant Pharma hackathon.
+Medical Q&A for doctors — fast, cited, trustworthy. Built for the Jubilant Jubilant Pharmova hackathon.
 
 **Full project spec:** see [`PROJECT_SPEC.md`](./PROJECT_SPEC.md).
 
