@@ -32,6 +32,39 @@ Note: You do not need to rebuild ingestion data to use the deployed app.
 - Node.js `22 LTS` + `npm`
 - (Optional) Flutter SDK for Windows desktop demo
 
+### Environment Variables (Required for local backend)
+
+Create a root `.env` file at:
+
+- `e:\Development\jubiliant hackathon\.env`
+
+You can copy from template:
+
+```powershell
+cd "e:\Development\jubiliant hackathon"
+Copy-Item .env.example .env
+```
+
+Add these values in `.env`:
+
+```env
+GOOGLE_API_KEY=your_google_ai_studio_key
+GROQ_API_KEY=your_groq_key
+NCBI_API_KEY=your_ncbi_key_optional
+NCBI_EMAIL=your_email@example.com
+```
+
+Where to get keys:
+
+- Google Gemini key (`GOOGLE_API_KEY`): [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+- Groq key (`GROQ_API_KEY`): [https://console.groq.com/keys](https://console.groq.com/keys)
+- NCBI key (`NCBI_API_KEY`, optional but recommended): [https://www.ncbi.nlm.nih.gov/account/settings/](https://www.ncbi.nlm.nih.gov/account/settings/)
+
+Notes:
+
+- `NCBI_API_KEY` is optional; without it, PubMed still works but with lower rate limits.
+- Never commit `.env` or `frontend/.env.local` to git.
+
 ### Backend (Terminal 1, PowerShell)
 
 ```powershell
