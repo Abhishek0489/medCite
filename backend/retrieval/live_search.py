@@ -29,42 +29,11 @@ from config import settings  # noqa: E402
 from ingestion.chunker import article_to_chunks  # noqa: E402
 from pubmed_client import HTTP_TIMEOUT, fetch_articles, search_pmids  # noqa: E402
 from retrieval.local_search import get_db  # noqa: E402
+from retrieval.query_preprocess import PUBMED_FALLBACK_STOPWORDS  # noqa: E402
 
 
 LIVE_TOP_PMIDS = 10
 LIVE_TOP_CHUNKS = 5
-LIVE_SEARCH_STOPWORDS = {
-    "the",
-    "a",
-    "an",
-    "of",
-    "for",
-    "in",
-    "on",
-    "with",
-    "and",
-    "or",
-    "is",
-    "are",
-    "was",
-    "were",
-    "be",
-    "been",
-    "being",
-    "what",
-    "which",
-    "who",
-    "whom",
-    "whose",
-    "when",
-    "where",
-    "why",
-    "how",
-    "best",
-    "first-line",
-    "recommended",
-    "dose",
-}
 
 _model: SentenceTransformer | None = None
 _lock = threading.Lock()
@@ -85,7 +54,7 @@ def _strip_live_search_stopwords(query: str) -> str:
     Returns the original query if stripping would leave fewer than 2 terms.
     """
     tokens = re.findall(r"[A-Za-z0-9.-]+", query)
-    filtered = [t for t in tokens if t.lower() not in LIVE_SEARCH_STOPWORDS]
+    filtered = [t for t in tokens if t.lower() not in PUBMED_FALLBACK_STOPWORDS]
     if len(filtered) < 2:
         return query.strip()
     return " ".join(filtered)
